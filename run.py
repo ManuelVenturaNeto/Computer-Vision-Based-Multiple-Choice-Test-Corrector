@@ -1,0 +1,19 @@
+"""
+Student Paper Reader — Entry Point.
+
+Starts the Flask web server for the webcam-based OCR application.
+Usage:
+    python run.py
+"""
+
+from src.app import create_app
+from src.config import Config
+
+app = create_app()
+
+if __name__ == "__main__":
+    app.run(
+        host=Config.HOST,
+        port=Config.PORT,
+        debug=Config.DEBUG,
+    )
