@@ -1,16 +1,20 @@
 /**
  * Student Paper Reader — Frontend Application
  *
- * Handles webcam access, frame capture, server communication,
- * result display, and annotation confirmation flow.
+ * Handles webcam access, frame capture, real-time live detection
+ * with bounding box overlay, server communication, result display,
+ * and annotation confirmation flow.
  */
 
 // === DOM Elements ===
 const video = document.getElementById("webcamVideo");
 const canvas = document.getElementById("captureCanvas");
 const ctx = canvas.getContext("2d");
+const detectionCanvas = document.getElementById("detectionCanvas");
+const detCtx = detectionCanvas.getContext("2d");
 const btnStart = document.getElementById("btnStartCamera");
 const btnCapture = document.getElementById("btnCapture");
+const btnLiveScan = document.getElementById("btnLiveScan");
 const statusBadge = document.getElementById("statusBadge");
 const statusText = statusBadge.querySelector(".status-text");
 const webcamPlaceholder = document.getElementById("webcamPlaceholder");
@@ -21,6 +25,9 @@ const modalName = document.getElementById("modalName");
 const modalCode = document.getElementById("modalCode");
 const modalMeta = document.getElementById("modalMeta");
 const loadingOverlay = document.getElementById("loadingOverlay");
+const liveInfoBar = document.getElementById("liveInfoBar");
+const liveName = document.getElementById("liveName");
+const liveCode = document.getElementById("liveCode");
 
 // Modal mode elements
 const displayMode = document.getElementById("displayMode");
@@ -34,12 +41,13 @@ const savedMessage = document.getElementById("savedMessage");
 // === State ===
 let cameraStream = null;
 let isProcessing = false;
-let lastResult = null; // Stores the last OCR result for saving
+let lastResult = null;
+let liveScanning = false;
+let liveScanTimer = null;
+let isLiveProcessing = false;
 
 /**
  * Update the status badge in the header.
- * @param {string} text - Status message to display.
- * @param {'ready'|'processing'|'error'|''} state - Visual state class.
  */
 function updateStatus(text, state = "") {
     statusText.textContent = text;
@@ -55,8 +63,8 @@ async function startCamera() {
 
         cameraStream = await navigator.mediaDevices.getUserMedia({
             video: {
-                width: { ideal: 1280 },
-                height: { ideal: 960 },
+                width: { ideal: 3840 },
+                height: { ideal: 2160 },
                 facingMode: "environment",
             },
         });
@@ -70,6 +78,7 @@ async function startCamera() {
         btnStart.disabled = true;
         btnStart.textContent = "Camera Active";
         btnCapture.disabled = false;
+        btnLiveScan.disabled = false;
 
         updateStatus("Camera ready", "ready");
     } catch (err) {
@@ -81,6 +90,179 @@ async function startCamera() {
     }
 }
 
+// =============================================
+// LIVE SCAN — Real-time detection with overlay
+// =============================================
+
+/**
+ * Toggle live scanning on/off.
+ */
+function toggleLiveScan() {
+    if (liveScanning) {
+        stopLiveScan();
+    } else {
+        startLiveScan();
+    }
+}
+
+/**
+ * Start the live scanning loop.
+ * Captures a frame every 2.5 seconds and sends it
+ * to /api/detect-live for lightweight OCR detection.
+ */
+function startLiveScan() {
+    if (!cameraStream) return;
+
+    liveScanning = true;
+    btnLiveScan.classList.add("btn-live-active");
+    btnLiveScan.innerHTML = `
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="6" y="6" width="12" height="12"/>
+        </svg>
+        Stop Live`;
+    liveInfoBar.style.display = "flex";
+    updateStatus("Live scanning...", "processing");
+
+    // Run first scan immediately
+    runLiveScan();
+
+    // Then every 2.5 seconds
+    liveScanTimer = setInterval(runLiveScan, 2500);
+}
+
+/**
+ * Stop the live scanning loop.
+ */
+function stopLiveScan() {
+    liveScanning = false;
+    if (liveScanTimer) {
+        clearInterval(liveScanTimer);
+        liveScanTimer = null;
+    }
+
+    btnLiveScan.classList.remove("btn-live-active");
+    btnLiveScan.innerHTML = `
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="2" y1="12" x2="22" y2="12"/>
+        </svg>
+        Live Scan`;
+    liveInfoBar.style.display = "none";
+
+    // Clear detection overlay
+    clearDetectionCanvas();
+    updateStatus("Camera ready", "ready");
+}
+
+/**
+ * Run a single live scan cycle: capture → detect → draw boxes.
+ */
+async function runLiveScan() {
+    if (isLiveProcessing || !cameraStream || !liveScanning) return;
+    if (modalOverlay.classList.contains("active")) return;
+
+    isLiveProcessing = true;
+
+    try {
+        // Capture frame at reduced resolution for speed
+        const liveW = Math.min(video.videoWidth, 1280);
+        const liveH = Math.min(video.videoHeight, 960);
+        canvas.width = liveW;
+        canvas.height = liveH;
+        ctx.drawImage(video, 0, 0, liveW, liveH);
+
+        const imageData = canvas.toDataURL("image/jpeg", 0.7);
+
+        const response = await fetch("/api/detect-live", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ image: imageData }),
+        });
+
+        if (!response.ok) return;
+
+        const result = await response.json();
+
+        // Draw bounding boxes on detection canvas
+        drawDetections(result.blocks || [], liveW, liveH);
+
+        // Update live info bar
+        liveName.textContent = result.name || "—";
+        liveCode.textContent = result.code || "—";
+
+    } catch (err) {
+        console.error("Live scan error:", err);
+    } finally {
+        isLiveProcessing = false;
+    }
+}
+
+/**
+ * Draw bounding boxes and text labels on the detection canvas.
+ * @param {Array} blocks - Array of {text, confidence, bbox} objects.
+ * @param {number} srcW - Width of the source capture image.
+ * @param {number} srcH - Height of the source capture image.
+ */
+function drawDetections(blocks, srcW, srcH) {
+    // Match detection canvas to video display size
+    const container = document.getElementById("webcamContainer");
+    const displayW = container.clientWidth;
+    const displayH = container.clientHeight;
+
+    detectionCanvas.width = displayW;
+    detectionCanvas.height = displayH;
+    detCtx.clearRect(0, 0, displayW, displayH);
+
+    if (!blocks.length) return;
+
+    // Scale factors from source resolution to display size
+    const scaleX = displayW / srcW;
+    const scaleY = displayH / srcH;
+
+    for (const block of blocks) {
+        const bbox = block.bbox;
+        if (!bbox || bbox.length < 4) continue;
+
+        // EasyOCR bbox: [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
+        const x1 = bbox[0][0] * scaleX;
+        const y1 = bbox[0][1] * scaleY;
+        const x2 = bbox[2][0] * scaleX;
+        const y2 = bbox[2][1] * scaleY;
+        const w = x2 - x1;
+        const h = y2 - y1;
+
+        // Draw semi-transparent box
+        detCtx.strokeStyle = "rgba(92, 246, 156, 0.8)";
+        detCtx.lineWidth = 2;
+        detCtx.strokeRect(x1, y1, w, h);
+
+        // Draw filled background for text label
+        detCtx.fillStyle = "rgba(0, 0, 0, 0.7)";
+        const labelH = 18;
+        const text = `${block.text} (${Math.round(block.confidence * 100)}%)`;
+        detCtx.font = "bold 12px Inter, sans-serif";
+        const textW = detCtx.measureText(text).width + 8;
+        detCtx.fillRect(x1, y1 - labelH - 2, textW, labelH);
+
+        // Draw text label
+        detCtx.fillStyle = "rgba(92, 246, 156, 1)";
+        detCtx.fillText(text, x1 + 4, y1 - 6);
+    }
+}
+
+/**
+ * Clear the detection overlay canvas.
+ */
+function clearDetectionCanvas() {
+    detCtx.clearRect(0, 0, detectionCanvas.width, detectionCanvas.height);
+}
+
+// =============================================
+// CAPTURE — Full-quality single capture
+// =============================================
+
 /**
  * Capture a frame from the webcam, send it to the server for OCR,
  * and display the results in a modal popup.
@@ -88,19 +270,22 @@ async function startCamera() {
 async function captureAndProcess() {
     if (isProcessing || !cameraStream) return;
 
+    // Pause live scan during capture
+    const wasLiveScanning = liveScanning;
+    if (liveScanning) stopLiveScan();
+
     isProcessing = true;
     updateStatus("Processing...", "processing");
     loadingOverlay.classList.add("active");
 
     try {
-        // Capture frame from video
+        // Capture at full resolution
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         ctx.drawImage(video, 0, 0);
 
         const imageData = canvas.toDataURL("image/png");
 
-        // Send to server
         const response = await fetch("/api/process", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -126,14 +311,16 @@ async function captureAndProcess() {
     }
 }
 
+// =============================================
+// MODAL — Result display & annotation
+// =============================================
+
 /**
  * Display OCR results in the modal popup with confirmation buttons.
- * @param {Object} result - Server response with name, code, blocks_found, snapshot.
  */
 function showResult(result) {
     lastResult = result;
 
-    // Reset modal to display mode
     modalTitle.textContent = "Student Data Detected";
     displayMode.style.display = "block";
     editMode.style.display = "none";
@@ -141,7 +328,6 @@ function showResult(result) {
     saveButtons.style.display = "none";
     savedMessage.style.display = "none";
 
-    // Set name
     if (result.name) {
         modalName.textContent = result.name;
         modalName.classList.remove("not-found");
@@ -150,7 +336,6 @@ function showResult(result) {
         modalName.classList.add("not-found");
     }
 
-    // Set code
     if (result.code) {
         modalCode.textContent = result.code;
         modalCode.classList.remove("not-found");
@@ -159,34 +344,21 @@ function showResult(result) {
         modalCode.classList.add("not-found");
     }
 
-    // Meta info
     let metaText = `${result.blocks_found || 0} text blocks detected`;
     if (result.snapshot) {
         metaText += ` · Saved to snapshots/`;
     }
     modalMeta.textContent = metaText;
 
-    // Show modal
     modalOverlay.classList.add("active");
     updateStatus("Review results", "ready");
 }
 
-/**
- * User confirms the OCR result is correct.
- * Saves the detected values to annotations.json.
- */
 async function confirmCorrect() {
     if (!lastResult) return;
-
-    const name = lastResult.name || "";
-    const code = lastResult.code || "";
-
-    await saveAnnotation(name, code);
+    await saveAnnotation(lastResult.name || "", lastResult.code || "");
 }
 
-/**
- * Switch modal to edit mode so user can type correct values.
- */
 function showEditMode() {
     modalTitle.textContent = "Enter Correct Values";
     displayMode.style.display = "none";
@@ -194,17 +366,11 @@ function showEditMode() {
     confirmButtons.style.display = "none";
     saveButtons.style.display = "block";
 
-    // Pre-fill with detected values
     editNameInput.value = lastResult?.name || "";
     editCodeInput.value = lastResult?.code || "";
-
-    // Focus the name input
     editNameInput.focus();
 }
 
-/**
- * Save the corrected values entered by the user.
- */
 async function saveCorrected() {
     const name = editNameInput.value.trim();
     const code = editCodeInput.value.trim();
@@ -217,11 +383,6 @@ async function saveCorrected() {
     await saveAnnotation(name, code);
 }
 
-/**
- * Send annotation data to the server to save in annotations.json.
- * @param {string} name - Student name (correct value).
- * @param {string} code - Student code (correct value).
- */
 async function saveAnnotation(name, code) {
     if (!lastResult?.snapshot) {
         alert("No snapshot available to annotate.");
@@ -244,7 +405,6 @@ async function saveAnnotation(name, code) {
         const result = await response.json();
 
         if (response.ok) {
-            // Show saved confirmation
             displayMode.style.display = "none";
             editMode.style.display = "none";
             confirmButtons.style.display = "none";
@@ -252,7 +412,6 @@ async function saveAnnotation(name, code) {
             savedMessage.style.display = "block";
             modalTitle.textContent = "Saved!";
             modalMeta.textContent = `Name: "${name}" · Code: "${code}"`;
-
             updateStatus("Annotation saved", "ready");
         } else {
             alert("Failed to save: " + (result.error || "Unknown error"));
@@ -265,20 +424,16 @@ async function saveAnnotation(name, code) {
     }
 }
 
-/**
- * Close the result modal popup.
- */
 function closeModal() {
     modalOverlay.classList.remove("active");
     lastResult = null;
+    clearDetectionCanvas();
     updateStatus("Ready to scan", "ready");
 }
 
-// Close modal on overlay click (outside card)
+// Close modal on overlay click
 modalOverlay.addEventListener("click", (e) => {
-    if (e.target === modalOverlay) {
-        closeModal();
-    }
+    if (e.target === modalOverlay) closeModal();
 });
 
 // Close modal with Escape key

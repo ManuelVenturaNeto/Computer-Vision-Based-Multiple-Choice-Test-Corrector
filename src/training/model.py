@@ -30,12 +30,12 @@ class CharsetCodec:
         num_classes: Total classes including CTC blank.
     """
 
-    # Full charset: letters, accented chars, digits, space
+    # Full charset: letters, accented chars, digits, space, punctuation
     DEFAULT_CHARS: str = (
         "abcdefghijklmnopqrstuvwxyz"
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         "ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖÙÚÛÜÝàáâãäåæçèéêëìíîïðñòóôõöùúûüý"
-        "0123456789 "
+        "0123456789 .-:/"
     )
 
     def __init__(self, chars: Optional[str] = None) -> None:
@@ -44,11 +44,9 @@ class CharsetCodec:
         Index 0 is reserved for the CTC blank token.
 
         Args:
-            chars: String of characters to support. Uses DEFAULT_CHARS
-                if not provided.
+            chars: String of characters to support.
         """
         self.chars: str = chars or self.DEFAULT_CHARS
-        # Index 0 = CTC blank
         self.char_to_idx: dict[str, int] = {
             c: i + 1 for i, c in enumerate(self.chars)
         }
@@ -57,47 +55,23 @@ class CharsetCodec:
         }
         self.num_classes: int = len(self.chars) + 1  # +1 for blank
         logger.info(
-            "CharsetCodec initialized: %d chars, %d classes.",
-            len(self.chars),
-            self.num_classes,
+            "CharsetCodec: %d chars, %d classes.",
+            len(self.chars), self.num_classes,
         )
 
     def encode(self, text: str) -> list[int]:
-        """Encode a text string to a list of integer indices.
-
-        Characters not in the charset are skipped.
-
-        Args:
-            text: Text string to encode.
-
-        Returns:
-            List of integer indices.
-        """
-        return [
-            self.char_to_idx[c]
-            for c in text
-            if c in self.char_to_idx
-        ]
+        """Encode text to indices. Skips unknown chars."""
+        return [self.char_to_idx[c] for c in text if c in self.char_to_idx]
 
     def decode(self, indices: list[int]) -> str:
-        """Decode a list of indices back to a text string.
-
-        Applies CTC decoding: removes blanks (index 0) and
-        collapses repeated characters.
-
-        Args:
-            indices: List of integer indices from model output.
-
-        Returns:
-            Decoded text string.
-        """
+        """CTC-decode: remove blanks and collapse repeats."""
         result = []
         prev_idx = -1
         for idx in indices:
-            if idx == 0:  # CTC blank
+            if idx == 0:
                 prev_idx = idx
                 continue
-            if idx == prev_idx:  # Repeated char
+            if idx == prev_idx:
                 continue
             if idx in self.idx_to_char:
                 result.append(self.idx_to_char[idx])
@@ -105,26 +79,14 @@ class CharsetCodec:
         return "".join(result)
 
     def save(self, filepath: str) -> None:
-        """Save the charset configuration to a JSON file.
-
-        Args:
-            filepath: Path to save the JSON file.
-        """
-        data = {"chars": self.chars}
+        """Save charset to JSON."""
         with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+            json.dump({"chars": self.chars}, f, ensure_ascii=False, indent=2)
         logger.info("Charset saved to: %s", filepath)
 
     @classmethod
     def load(cls, filepath: str) -> "CharsetCodec":
-        """Load a charset configuration from a JSON file.
-
-        Args:
-            filepath: Path to the JSON file.
-
-        Returns:
-            Loaded CharsetCodec instance.
-        """
+        """Load charset from JSON."""
         with open(filepath, "r", encoding="utf-8") as f:
             data = json.load(f)
         logger.info("Charset loaded from: %s", filepath)
@@ -135,7 +97,7 @@ class CRNNModel(nn.Module):
     """Convolutional Recurrent Neural Network for text recognition.
 
     Architecture:
-    1. CNN feature extractor (3 conv blocks with BatchNorm + ReLU + Pool)
+    1. CNN feature extractor (6 conv blocks with BatchNorm + ReLU + Pool)
     2. Bidirectional LSTM for sequence modeling
     3. Fully connected layer mapping to character classes
 
@@ -183,7 +145,6 @@ class CRNNModel(nn.Module):
             nn.MaxPool2d(kernel_size=2, stride=2),
 
             # Block 3: 128 -> 256 channels
-            nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1) if False else
             nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(256),
             nn.ReLU(inplace=True),
@@ -278,21 +239,12 @@ class CRNNModel(nn.Module):
         return preds
 
     def save_model(self, filepath: str) -> None:
-        """Save the model weights to a file.
-
-        Args:
-            filepath: Path to save the model weights.
-        """
+        """Save model weights."""
         torch.save(self.state_dict(), filepath)
         logger.info("Model saved to: %s", filepath)
 
     def load_model(self, filepath: str, device: str = "cpu") -> None:
-        """Load model weights from a file.
-
-        Args:
-            filepath: Path to the model weights file.
-            device: Device to load the model onto.
-        """
+        """Load model weights."""
         self.load_state_dict(
             torch.load(filepath, map_location=device, weights_only=True)
         )

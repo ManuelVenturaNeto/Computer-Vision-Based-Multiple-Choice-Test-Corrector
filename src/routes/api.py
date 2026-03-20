@@ -158,16 +158,95 @@ def process_frame():
             student_name, student_code,
         )
 
+        # Prepare raw blocks with bbox for live overlay
+        raw_blocks = []
+        for block in unique_blocks:
+            raw_blocks.append({
+                "text": block["text"],
+                "confidence": round(block["confidence"], 2),
+                "bbox": _serialize_bbox(block.get("bbox", [])),
+            })
+
         return jsonify({
             "name": student_name,
             "code": student_code,
             "blocks_found": len(unique_blocks),
             "snapshot": snapshot_path,
+            "raw_blocks": raw_blocks,
         })
 
     except Exception as e:
         logger.exception("Error during frame processing: %s", str(e))
         return jsonify({"error": f"Processing failed: {str(e)}"}), 500
+
+
+@api_bp.route("/api/detect-live", methods=["POST"])
+def detect_live():
+    """Lightweight live detection for real-time overlay.
+
+    Uses only the original image (no multi-strategy) for speed.
+    Returns raw bounding boxes and text for drawing on canvas.
+
+    Expects JSON body: {"image": "<base64 string>"}
+
+    Returns:
+        JSON: {"blocks": [{"text", "confidence", "bbox"}], "name", "code"}
+    """
+    data = request.get_json()
+    if not data or "image" not in data:
+        return jsonify({"error": "No image data"}), 400
+
+    frame = FrameDecoder.decode_base64_frame(data["image"])
+    if frame is None:
+        return jsonify({"error": "Failed to decode image"}), 400
+
+    try:
+        processor = _get_processor()
+        name_extractor = _get_name_extractor()
+        code_extractor = _get_code_extractor()
+
+        # Single pass only (fast for live detection)
+        text_blocks = processor.extract_text(frame)
+
+        # Extract name and code
+        student_name = name_extractor.extract(text_blocks)
+        student_code = code_extractor.extract(text_blocks)
+
+        # Build response blocks with bbox
+        blocks = []
+        for block in text_blocks:
+            blocks.append({
+                "text": block["text"],
+                "confidence": round(block["confidence"], 2),
+                "bbox": _serialize_bbox(block.get("bbox", [])),
+            })
+
+        return jsonify({
+            "blocks": blocks,
+            "name": student_name,
+            "code": student_code,
+        })
+
+    except Exception as e:
+        logger.error("Live detection error: %s", str(e))
+        return jsonify({"blocks": [], "name": None, "code": None})
+
+
+def _serialize_bbox(bbox) -> list:
+    """Convert bounding box points to plain Python lists for JSON.
+
+    EasyOCR can return numpy arrays, which are not JSON-serializable.
+
+    Args:
+        bbox: List of [x, y] points (possibly numpy).
+
+    Returns:
+        List of [float, float] points.
+    """
+    try:
+        return [[float(p[0]), float(p[1])] for p in bbox]
+    except (TypeError, IndexError):
+        return []
 
 
 def _deduplicate_blocks(blocks: list[dict]) -> list[dict]:
