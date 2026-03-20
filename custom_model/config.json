@@ -1,0 +1,6 @@
+{
+  "num_classes": 120,
+  "img_height": 32,
+  "img_width": 256,
+  "hidden_size": 256
+}
