@@ -1,7 +1,7 @@
 
-!dataset/.gitkeep
-!custom_model/.gitkeep
-!snapshots/.gitkeep
+snapshots/
+custom_model/
+dataset/
 
 # Created by https://www.toptal.com/developers/gitignore/api/python
 # Edit at https://www.toptal.com/developers/gitignore?templates=python
