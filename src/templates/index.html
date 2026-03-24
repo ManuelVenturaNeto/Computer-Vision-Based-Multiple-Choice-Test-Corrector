@@ -3,142 +3,115 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description"
-        content="Capture a student sheet and extract the fields near NOME and Matricula with OpenAI or Gemini.">
+    <meta
+        name="description"
+        content="Open the camera, take a picture of the student sheet, and read the name and Matricula.">
     <title>Student Sheet Reader</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link
-        href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;700&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=Manrope:wght@400;500;600;700&display=swap"
         rel="stylesheet">
 </head>
 <body>
     <div class="page-shell">
         <header class="hero">
-            <div class="hero-copy">
-                <p class="eyebrow">Capture -> Vision model -> Student fields</p>
-                <h1>Student Sheet Reader</h1>
-                <p class="hero-text">
-                    Start the camera, take a capture, and send the image to OpenAI or Gemini to read only the values
-                    written near <strong>NOME:</strong> and <strong>Matricula:</strong>.
-                </p>
-            </div>
-            <div class="status-badge" id="statusBadge">
+            <p class="eyebrow">Simple student sheet reader</p>
+            <h1>Take one picture and read the form</h1>
+            <p class="hero-text">
+                Open the camera, point it at the sheet, and take a picture. The app will look for
+                <strong>NOME</strong> and <strong>Matricula</strong>.
+            </p>
+
+            <div class="status-pill" id="statusBadge">
                 <span class="status-dot"></span>
-                <span class="status-text">Loading interface...</span>
+                <span class="status-text">Preparing page...</span>
             </div>
         </header>
 
-        <main class="workspace">
-            <section class="panel viewer-panel">
-                <div class="panel-head">
+        <main class="layout">
+            <section class="card camera-card">
+                <div class="section-head">
                     <div>
-                        <p class="panel-kicker">Live camera</p>
+                        <p class="section-kicker">Camera</p>
                         <h2>Frame the student sheet</h2>
                     </div>
-                    <p class="panel-note">Keep the labels and handwritten values inside the guide.</p>
+                    <p class="section-text">Keep the labels and handwritten values inside the frame.</p>
                 </div>
 
                 <div class="viewer-stage">
                     <video id="webcamVideo" autoplay playsinline></video>
                     <canvas id="captureCanvas" hidden></canvas>
+
                     <div class="guide-overlay" id="webcamOverlay">
                         <div class="guide-frame"></div>
-                        <div class="guide-copy">
-                            <span>Position NOME and Matricula inside the frame</span>
+                        <p class="guide-copy">Place NOME and Matricula inside this area.</p>
+                    </div>
+
+                    <div class="viewer-placeholder" id="webcamPlaceholder">
+                        <div>
+                            <p class="placeholder-title">Camera is closed</p>
+                            <p class="placeholder-text">Press "Open Camera" when you are ready.</p>
                         </div>
                     </div>
-                    <div class="viewer-placeholder" id="webcamPlaceholder">
-                        <p class="placeholder-title">Camera is off</p>
-                        <p class="placeholder-text">Use "Start Camera" when you are ready to capture the sheet.</p>
-                    </div>
                 </div>
 
-                <div class="viewer-actions">
-                    <button id="btnStartCamera" class="btn btn-primary" type="button">Start Camera</button>
-                    <button id="btnCapture" class="btn btn-secondary" type="button" disabled>Capture & Extract</button>
+                <div class="button-row">
+                    <button id="btnStartCamera" class="btn btn-primary" type="button">Open Camera</button>
+                    <button id="btnStopCamera" class="btn btn-secondary" type="button" disabled>Close Camera</button>
+                    <button id="btnCapture" class="btn btn-accent" type="button" disabled>Take Picture</button>
                 </div>
             </section>
 
-            <section class="panel setup-panel">
-                <div class="panel-head">
-                    <div>
-                        <p class="panel-kicker">Model setup</p>
-                        <h2>Choose the provider</h2>
+            <aside class="side-column">
+                <section class="card help-card">
+                    <div class="section-head">
+                        <div>
+                            <p class="section-kicker">How to use</p>
+                            <h2>Three simple steps</h2>
+                        </div>
                     </div>
-                </div>
 
-                <div class="field-stack">
-                    <label class="field" for="providerSelect">
-                        <span class="field-label">Provider</span>
-                        <select id="providerSelect"></select>
-                    </label>
-
-                    <label class="field" for="modelInput">
-                        <span class="field-label">Model</span>
-                        <input id="modelInput" list="modelSuggestions" type="text"
-                            placeholder="Enter a vision-capable model name">
-                        <datalist id="modelSuggestions"></datalist>
-                    </label>
-                </div>
-
-                <p class="provider-hint" id="providerHint"></p>
-                <p class="key-status" id="keyStatus"></p>
-
-                <div class="tips-card">
-                    <h3>Capture tips</h3>
-                    <ol>
-                        <li>Keep the sheet flat and well lit.</li>
-                        <li>Make sure the labels <strong>NOME:</strong> and <strong>Matricula:</strong> are visible.</li>
-                        <li>Hold the camera steady before capturing.</li>
-                        <li>Set <code>OPENAI_API_KEY</code> or <code>GEMINI_API_KEY</code> before using each provider.</li>
+                    <ol class="steps-list">
+                        <li>Open the camera.</li>
+                        <li>Show the sheet clearly with good light.</li>
+                        <li>Take the picture and wait for the result.</li>
                     </ol>
-                </div>
-            </section>
 
-            <section class="panel result-panel" id="resultPanel">
-                <div class="panel-head">
-                    <div>
-                        <p class="panel-kicker">Last result</p>
-                        <h2>Extracted values</h2>
-                    </div>
-                    <p class="result-summary" id="resultSummary">Waiting for the first capture.</p>
-                </div>
+                    <div class="service-note" id="serviceNote"></div>
+                </section>
 
-                <div class="result-grid">
-                    <article class="result-field">
-                        <span class="result-label">Student Name</span>
-                        <div class="result-value" id="resultName">Not captured yet</div>
-                    </article>
+                <section class="card result-card" id="resultPanel">
+                    <div class="section-head">
+                        <div>
+                            <p class="section-kicker">Result</p>
+                            <h2>Last reading</h2>
+                        </div>
+                        <p class="result-summary" id="resultSummary">No picture taken yet.</p>
+                    </div>
 
-                    <article class="result-field">
-                        <span class="result-label">Student Code</span>
-                        <div class="result-value result-code" id="resultCode">Not captured yet</div>
-                    </article>
-                </div>
+                    <div class="result-grid">
+                        <article class="result-box">
+                            <span class="result-label">Name</span>
+                            <div class="result-value" id="resultName">Waiting...</div>
+                        </article>
 
-                <div class="result-meta">
-                    <div class="meta-row">
-                        <span>Provider</span>
-                        <strong id="resultProvider">-</strong>
+                        <article class="result-box">
+                            <span class="result-label">Matricula</span>
+                            <div class="result-value result-code" id="resultCode">Waiting...</div>
+                        </article>
                     </div>
-                    <div class="meta-row">
-                        <span>Model</span>
-                        <strong id="resultModel">-</strong>
-                    </div>
-                    <div class="meta-row">
-                        <span>Snapshot</span>
-                        <strong id="resultSnapshot">-</strong>
-                    </div>
-                </div>
-            </section>
+
+                    <p class="snapshot-note" id="resultSnapshot">No saved image yet.</p>
+                </section>
+            </aside>
         </main>
     </div>
 
     <div class="loading-overlay" id="loadingOverlay">
         <div class="loading-card">
             <div class="spinner"></div>
-            <p>Processing capture...</p>
-            <span class="loading-sub" id="loadingSub">Sending image to the selected provider.</span>
+            <p>Reading the picture...</p>
+            <span class="loading-sub">Please wait a moment.</span>
         </div>
     </div>
 

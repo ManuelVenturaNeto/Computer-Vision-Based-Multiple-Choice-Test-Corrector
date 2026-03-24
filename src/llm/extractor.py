@@ -60,6 +60,55 @@ class ExtractionResult:
 class ModelExtractor:
     """Send a capture to either OpenAI or Gemini and parse the result."""
 
+    def extract_with_fallback(self, *, image_data_url: str) -> ExtractionResult:
+        """Try Gemini first, then OpenAI if Gemini fails."""
+        providers_to_try = Config.preferred_providers()
+
+        if not providers_to_try:
+            raise MissingAPIKeyError(
+                "Photo reading is not configured yet. "
+                "Set GEMINI_API_KEY or OPENAI_API_KEY and restart the app."
+            )
+
+        last_error: Exception | None = None
+
+        for index, provider in enumerate(providers_to_try):
+            model = Config.default_model_for(provider)
+            is_last_provider = index == len(providers_to_try) - 1
+
+            try:
+                result = self.extract(
+                    image_data_url=image_data_url,
+                    provider=provider,
+                    model=model,
+                )
+
+                if result.name or result.code or is_last_provider:
+                    return result
+
+                logger.warning(
+                    "Photo reading with %s using %s returned no readable fields. "
+                    "Trying the next provider.",
+                    provider,
+                    model,
+                )
+                last_error = ModelExtractorError("No readable fields found.")
+            except MissingAPIKeyError as exc:
+                logger.warning("Skipping %s because its API key is missing.", provider)
+                last_error = exc
+            except ModelExtractorError as exc:
+                logger.warning(
+                    "Photo reading failed with %s using %s: %s",
+                    provider,
+                    model,
+                    exc,
+                )
+                last_error = exc
+
+        raise ProviderRequestError(
+            "Could not read the photo right now. Please try again."
+        ) from last_error
+
     def extract(
         self,
         *,

@@ -1,4 +1,4 @@
-"""Configuration for the restarted student capture project."""
+"""Configuration for the student capture project."""
 
 import logging
 import os
@@ -9,21 +9,6 @@ from dotenv import load_dotenv
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
-
-
-def _parse_csv_env(name: str, fallback: list[str]) -> list[str]:
-    """Parse a comma-separated environment variable into a unique list."""
-    raw_value = os.getenv(name, "").strip()
-    if not raw_value:
-        return fallback
-
-    values: list[str] = []
-    for item in raw_value.split(","):
-        cleaned = item.strip()
-        if cleaned and cleaned not in values:
-            values.append(cleaned)
-
-    return values or fallback
 
 
 class Config:
@@ -65,31 +50,10 @@ class Config:
         "GEMINI_MODEL", "gemini-2.5-flash"
     ).strip()
 
-    OPENAI_MODEL_SUGGESTIONS: list[str] = _parse_csv_env(
-        "OPENAI_MODEL_SUGGESTIONS",
-        ["gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini"],
-    )
-    GEMINI_MODEL_SUGGESTIONS: list[str] = _parse_csv_env(
-        "GEMINI_MODEL_SUGGESTIONS",
-        ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash"],
-    )
-
     @classmethod
     def configure_logging(cls) -> None:
         """Configure application logging."""
         logging.basicConfig(level=cls.LOG_LEVEL, format=cls.LOG_FORMAT)
-
-    @classmethod
-    def default_provider(cls) -> str:
-        """Pick the provider shown first in the UI and used as fallback."""
-        requested = os.getenv("LLM_PROVIDER", "").strip().lower()
-        if requested in {"openai", "gemini"}:
-            return requested
-        if cls.OPENAI_API_KEY:
-            return "openai"
-        if cls.GEMINI_API_KEY:
-            return "gemini"
-        return "openai"
 
     @classmethod
     def default_model_for(cls, provider: str) -> str:
@@ -108,24 +72,37 @@ class Config:
         return ""
 
     @classmethod
+    def preferred_providers(cls) -> list[str]:
+        """Return the provider order used when reading a capture."""
+        providers: list[str] = []
+
+        if cls.GEMINI_API_KEY:
+            providers.append("gemini")
+        if cls.OPENAI_API_KEY:
+            providers.append("openai")
+
+        return providers
+
+    @classmethod
+    def processing_ready(cls) -> bool:
+        """Tell the UI if the server can process a captured photo."""
+        return bool(cls.preferred_providers())
+
+    @classmethod
+    def service_message(cls) -> str:
+        """Return a simple status message for the frontend."""
+        if cls.processing_ready():
+            return "Photo reading is ready."
+
+        return (
+            "Photo reading is not configured yet. "
+            "Set GEMINI_API_KEY or OPENAI_API_KEY and restart the app."
+        )
+
+    @classmethod
     def ui_config(cls) -> dict[str, Any]:
-        """Return provider metadata consumed by the frontend."""
+        """Return the small amount of data needed by the frontend."""
         return {
-            "defaultProvider": cls.default_provider(),
-            "providers": {
-                "openai": {
-                    "label": "OpenAI",
-                    "envVar": "OPENAI_API_KEY",
-                    "configured": bool(cls.OPENAI_API_KEY),
-                    "defaultModel": cls.OPENAI_DEFAULT_MODEL,
-                    "suggestedModels": cls.OPENAI_MODEL_SUGGESTIONS,
-                },
-                "gemini": {
-                    "label": "Gemini",
-                    "envVar": "GEMINI_API_KEY",
-                    "configured": bool(cls.GEMINI_API_KEY),
-                    "defaultModel": cls.GEMINI_DEFAULT_MODEL,
-                    "suggestedModels": cls.GEMINI_MODEL_SUGGESTIONS,
-                },
-            },
+            "processingReady": cls.processing_ready(),
+            "serviceMessage": cls.service_message(),
         }
