@@ -1,10 +1,4 @@
-"""
-Student Paper Reader — Entry Point.
-
-Starts the Flask web server for the webcam-based OCR application.
-Usage:
-    python run.py
-"""
+"""Run the Flask server for the student capture project."""
 
 from src.app import create_app
 from src.config import Config
