@@ -57,4 +57,6 @@ gc run services add-iam-policy-binding "${SERVICE}" \
   --region "${REGION}" \
   --member="allUsers" \
   --quiet \
+  --max-instances=1 \
+  --concurrency=15 \
   --role="roles/run.invoker"
