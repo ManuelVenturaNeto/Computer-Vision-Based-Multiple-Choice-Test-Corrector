@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { Jimp, rgbaToInt } from "jimp";
 
-import { extractAnswerSheetFromImageBase64 } from "../server/extractAnswerSheet.js";
+import { extractAnswerSheetFromImageBase64 } from "../server/services/extractAnswerSheet.js";
 
 const BLACK = rgbaToInt(0, 0, 0, 255);
 const WHITE = rgbaToInt(255, 255, 255, 255);
