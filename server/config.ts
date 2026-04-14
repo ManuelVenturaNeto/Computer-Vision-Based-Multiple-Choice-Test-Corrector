@@ -10,7 +10,7 @@ function readPort(rawValue: string | undefined, fallback: number) {
 }
 
 export const serverConfig = {
-  apiPort: readPort(process.env.API_PORT, 8787),
+  apiPort: readPort(process.env.PORT, readPort(process.env.API_PORT, 8787)),
   openAiApiKey: (process.env.OPENAI_API_KEY ?? "").trim(),
   openAiModel: (process.env.OPENAI_MODEL ?? "gpt-4.1-mini").trim(),
 } as const;

@@ -13,9 +13,12 @@ import {
   Sparkles,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import {
+  extractAlunoFromImage,
+  readAnswerSheetFromImage,
+  type AnswerSheetReadResponse,
+} from "../services/cameraProcessing";
 import type { GabaritoReferencia } from "../types";
-
-const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY as string;
 
 type CameraPhase = "starting" | "preview" | "processing" | "form" | "error";
 
@@ -31,70 +34,18 @@ interface CameraModalProps {
 
 const OPCOES = ["A", "B", "C", "D", "E"];
 
-async function extractAlunoFromImage(
-  imageDataUrl: string
-): Promise<{ nome: string; matricula: string }> {
-  const base64 = imageDataUrl.split(",")[1];
+function resizeAnswers(answerList: string[], targetLength: number) {
+  return Array.from({ length: targetLength }, (_, index) => answerList[index] ?? "");
+}
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: `Analise esta imagem de um documento de aluno universitário.
-Extraia:
-1. O NOME do aluno: encontra-se próximo ao texto "Nome:" na imagem. O nome é composto somente por letras e espaços (sem números, pontos, hífens ou caracteres especiais).
-2. A MATRÍCULA do aluno: encontra-se próximo ao texto "Matricula:" ou "Matrícula:" na imagem. É composta por exatamente 6 dígitos numéricos.
+function buildAnswerSheetSummary(result: AnswerSheetReadResponse) {
+  const totalLidas = result.respostas.filter(Boolean).length;
 
-Retorne APENAS um JSON válido no formato: {"nome": "...", "matricula": "..."}
-Se não encontrar algum campo, deixe como string vazia "".`,
-            },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:image/jpeg;base64,${base64}`,
-                detail: "high",
-              },
-            },
-          ],
-        },
-      ],
-      max_tokens: 150,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`API error: ${response.status}`);
+  if (result.warnings.length > 0) {
+    return `Leitura concluida com ${totalLidas}/${result.numQuestoes} questoes marcadas. Revise as questoes em branco.`;
   }
 
-  const data = await response.json();
-  const content: string = data.choices?.[0]?.message?.content ?? "";
-
-  const jsonMatch = content.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    try {
-      const parsed = JSON.parse(jsonMatch[0]);
-      const nome = (parsed.nome ?? "")
-        .replace(/[^a-zA-ZÀ-ÿ\s]/g, "")
-        .trim();
-      const matricula = (parsed.matricula ?? "")
-        .replace(/\D/g, "")
-        .slice(0, 6);
-      return { nome, matricula };
-    } catch {
-      return { nome: "", matricula: "" };
-    }
-  }
-  return { nome: "", matricula: "" };
+  return `Leitura automatica concluida com ${totalLidas}/${result.numQuestoes} questoes preenchidas.`;
 }
 
 export function CameraModal({
@@ -115,6 +66,8 @@ export function CameraModal({
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [processingStatus, setProcessingStatus] = useState("");
   const [ocrError, setOcrError] = useState<string | null>(null);
+  const [answerSheetError, setAnswerSheetError] = useState<string | null>(null);
+  const [answerSheetInfo, setAnswerSheetInfo] = useState<string | null>(null);
 
   // Form states
   const [disciplina, setDisciplina] = useState("");
@@ -135,21 +88,109 @@ export function CameraModal({
   }, []);
 
   useEffect(() => {
-    setRespostas(Array(qtdQuestoes).fill(""));
+    setRespostas((prev) => resizeAnswers(prev, qtdQuestoes));
   }, [qtdQuestoes]);
+
+  const waitForVideoElement = () =>
+    new Promise<HTMLVideoElement>((resolve, reject) => {
+      let attempts = 0;
+
+      const check = () => {
+        if (videoRef.current) {
+          resolve(videoRef.current);
+          return;
+        }
+
+        attempts += 1;
+        if (attempts > 60) {
+          reject(new Error("Elemento de video nao ficou disponivel a tempo."));
+          return;
+        }
+
+        window.requestAnimationFrame(check);
+      };
+
+      check();
+    });
+
+  const attachStreamToVideo = async (stream: MediaStream) => {
+    const video = await waitForVideoElement();
+
+    video.autoplay = true;
+    video.muted = true;
+    video.playsInline = true;
+    video.srcObject = stream;
+
+    await new Promise<void>((resolve, reject) => {
+      const timeout = window.setTimeout(() => {
+        cleanup();
+        reject(new Error("A camera nao enviou frames para o video."));
+      }, 4000);
+
+      const finish = async () => {
+        try {
+          await video.play();
+        } catch (error) {
+          console.error("Camera playback error:", error);
+        }
+
+        if (video.videoWidth > 0 && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+          cleanup();
+          resolve();
+        }
+      };
+
+      const cleanup = () => {
+        window.clearTimeout(timeout);
+        video.removeEventListener("loadedmetadata", finish);
+        video.removeEventListener("loadeddata", finish);
+        video.removeEventListener("canplay", finish);
+        video.removeEventListener("playing", finish);
+      };
+
+      video.addEventListener("loadedmetadata", finish);
+      video.addEventListener("loadeddata", finish);
+      video.addEventListener("canplay", finish);
+      video.addEventListener("playing", finish);
+
+      void finish();
+    });
+  };
 
   const startCamera = async () => {
     setPhase("starting");
+    stopCamera();
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: "environment",
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+        });
+        streamRef.current = stream;
+        setPhase("preview");
+        await attachStreamToVideo(stream);
+      } catch (primaryError) {
+        console.warn(
+          "Environment camera unavailable or not rendering, trying default camera.",
+          primaryError
+        );
+
+        stopCamera();
+
+        const fallbackStream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+        });
+        streamRef.current = fallbackStream;
+        setPhase("preview");
+        await attachStreamToVideo(fallbackStream);
       }
-      setPhase("preview");
-    } catch {
+    } catch (error) {
+      console.error("Camera start error:", error);
+      stopCamera();
       setPhase("error");
     }
   };
@@ -158,6 +199,10 @@ export function CameraModal({
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
+    }
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
     }
   };
 
@@ -171,6 +216,17 @@ export function CameraModal({
     if (!ctx) return null;
     ctx.drawImage(video, 0, 0);
     return canvas.toDataURL("image/jpeg", 0.92);
+  };
+
+  const resetToCamera = () => {
+    setCapturedImage(null);
+    setProcessingStatus("");
+    setScanProgress(0);
+    setErrors({});
+    setOcrError(null);
+    setAnswerSheetError(null);
+    setAnswerSheetInfo(null);
+    startCamera();
   };
 
   const handleCapturarAluno = async () => {
@@ -198,17 +254,52 @@ export function CameraModal({
     }
   };
 
-  const handleCapturarGabarito = () => {
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += 10;
-      setScanProgress(progress);
-      if (progress >= 100) {
-        clearInterval(interval);
-        stopCamera();
-        setPhase("form");
+  const handleCapturarGabarito = async () => {
+    const imageData = captureFrame();
+    if (!imageData) return;
+
+    setCapturedImage(imageData);
+    stopCamera();
+    setPhase("processing");
+    setScanProgress(15);
+    setProcessingStatus("Capturando imagem...");
+    setAnswerSheetError(null);
+    setAnswerSheetInfo(null);
+
+    try {
+      setProcessingStatus("Localizando a grade do gabarito...");
+      setScanProgress(45);
+
+      const result = await readAnswerSheetFromImage(
+        imageData,
+        mode === "gabarito-aluno" ? numQuestoes : undefined
+      );
+
+      const totalQuestoes =
+        mode === "gabarito-aluno" ? numQuestoes : result.numQuestoes;
+
+      setScanProgress(85);
+      setProcessingStatus("Preenchendo respostas detectadas...");
+      setErrors({});
+      setRespostas(resizeAnswers(result.respostas, totalQuestoes));
+      setAnswerSheetInfo(buildAnswerSheetSummary(result));
+
+      if (mode === "gabarito-ref") {
+        setQtdQuestoes(result.numQuestoes);
       }
-    }, 80);
+
+      setScanProgress(100);
+      setPhase("form");
+    } catch (err) {
+      console.error("Answer sheet error:", err);
+      setScanProgress(0);
+      setAnswerSheetError(
+        err instanceof Error
+          ? err.message
+          : "Não foi possível ler o gabarito automaticamente. Confira e preencha manualmente."
+      );
+      setPhase("form");
+    }
   };
 
   const handleResposta = (idx: number, opcao: string) => {
@@ -470,7 +561,9 @@ export function CameraModal({
                     <div className="flex items-center gap-2 justify-center mb-1">
                       <Sparkles size={16} className="text-yellow-400" />
                       <span className="text-white text-sm">
-                        Analisando com IA...
+                        {mode === "aluno-info"
+                          ? "Analisando com IA..."
+                          : "Lendo gabarito..."}
                       </span>
                     </div>
                     <p className="text-gray-400 text-xs">{processingStatus}</p>
@@ -620,13 +713,9 @@ export function CameraModal({
 
                     <button
                       onClick={() => {
-                        setCapturedImage(null);
                         setNome("");
                         setMatricula("");
-                        setErrors({});
-                        setOcrError(null);
-                        setScanProgress(0);
-                        startCamera();
+                        resetToCamera();
                       }}
                       className="flex items-center gap-2 text-xs text-gray-400 mt-1"
                     >
@@ -639,6 +728,63 @@ export function CameraModal({
                 {/* ── GABARITO REF FORM ── */}
                 {mode === "gabarito-ref" && (
                   <>
+                    {capturedImage ? (
+                      <div className="flex gap-3 items-start">
+                        <img
+                          src={capturedImage}
+                          alt="Gabarito capturado"
+                          className="w-20 h-14 object-cover rounded-xl border border-gray-200"
+                        />
+                        <div className="flex-1">
+                          {answerSheetError ? (
+                            <div className="rounded-xl p-2.5 bg-yellow-50 border border-yellow-200">
+                              <p className="text-xs text-yellow-700">
+                                {answerSheetError}
+                              </p>
+                            </div>
+                          ) : (
+                            <div
+                              className="rounded-xl p-2.5"
+                              style={{ backgroundColor: "#EEF3FC" }}
+                            >
+                              <div className="flex items-center gap-1.5 mb-0.5">
+                                <Sparkles
+                                  size={12}
+                                  style={{ color: "#003DA5" }}
+                                />
+                                <span
+                                  className="text-xs"
+                                  style={{ color: "#003DA5" }}
+                                >
+                                  Gabarito lido automaticamente
+                                </span>
+                              </div>
+                              <p className="text-xs text-gray-500">
+                                {answerSheetInfo ??
+                                  "Confira as respostas antes de salvar."}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        className="rounded-xl p-3 flex items-center gap-3"
+                        style={{ backgroundColor: "#EEF3FC" }}
+                      >
+                        <div
+                          className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+                          style={{ backgroundColor: "#003DA5" }}
+                        >
+                          <BookOpen size={18} className="text-white" />
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Tire uma foto para preencher o gabarito automaticamente
+                          ou ajuste manualmente.
+                        </p>
+                      </div>
+                    )}
+
                     <div>
                       <label className="block text-sm text-gray-600 mb-1">
                         Disciplina
@@ -738,6 +884,14 @@ export function CameraModal({
                         ))}
                       </div>
                     </div>
+
+                    <button
+                      onClick={resetToCamera}
+                      className="flex items-center gap-2 text-xs text-gray-400 mt-1"
+                    >
+                      <RefreshCw size={12} />
+                      Ler novamente pela câmera
+                    </button>
                   </>
                 )}
 
@@ -754,6 +908,46 @@ export function CameraModal({
                         <strong>{alunoNome || "Aluno"}</strong>
                       </p>
                     </div>
+                    {capturedImage && (
+                      <div className="flex gap-3 items-start">
+                        <img
+                          src={capturedImage}
+                          alt="Folha capturada"
+                          className="w-20 h-14 object-cover rounded-xl border border-gray-200"
+                        />
+                        <div className="flex-1">
+                          {answerSheetError ? (
+                            <div className="rounded-xl p-2.5 bg-yellow-50 border border-yellow-200">
+                              <p className="text-xs text-yellow-700">
+                                {answerSheetError}
+                              </p>
+                            </div>
+                          ) : (
+                            <div
+                              className="rounded-xl p-2.5"
+                              style={{ backgroundColor: "#EEF3FC" }}
+                            >
+                              <div className="flex items-center gap-1.5 mb-0.5">
+                                <Sparkles
+                                  size={12}
+                                  style={{ color: "#003DA5" }}
+                                />
+                                <span
+                                  className="text-xs"
+                                  style={{ color: "#003DA5" }}
+                                >
+                                  Respostas preenchidas automaticamente
+                                </span>
+                              </div>
+                              <p className="text-xs text-gray-500">
+                                {answerSheetInfo ??
+                                  "Revise as respostas antes de salvar."}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                     {errors.respostas && (
                       <p className="text-red-500 text-xs">{errors.respostas}</p>
                     )}
@@ -793,6 +987,14 @@ export function CameraModal({
                         </div>
                       ))}
                     </div>
+
+                    <button
+                      onClick={resetToCamera}
+                      className="flex items-center gap-2 text-xs text-gray-400 mt-1"
+                    >
+                      <RefreshCw size={12} />
+                      Ler novamente pela câmera
+                    </button>
                   </>
                 )}
               </div>

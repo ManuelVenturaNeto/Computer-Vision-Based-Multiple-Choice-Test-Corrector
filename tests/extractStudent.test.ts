@@ -5,7 +5,7 @@ import {
   parseModelJson,
   sanitizeStudentName,
   sanitizeStudentRegistration,
-} from "../server/extractStudent";
+} from "../server/extractStudent.js";
 
 test("sanitizeStudentName removes invalid characters", () => {
   assert.equal(

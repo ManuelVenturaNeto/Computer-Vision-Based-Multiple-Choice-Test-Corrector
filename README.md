@@ -29,6 +29,7 @@ cp .env.example .env
 OPENAI_API_KEY=...
 OPENAI_MODEL=gpt-4.1-mini
 API_PORT=8787
+VITE_API_BASE_URL=http://127.0.0.1:8787
 ```
 
 ## Rodar
@@ -92,8 +93,30 @@ Response:
 }
 ```
 
+### `POST /api/extract-answer-sheet`
+
+Request:
+
+```json
+{
+  "imageBase64": "...",
+  "expectedQuestionCount": 10
+}
+```
+
+Response:
+
+```json
+{
+  "numQuestoes": 10,
+  "respostas": ["A", "C", "B", "D", "E"],
+  "warnings": [],
+  "provider": "jimp"
+}
+```
+
 ## Seguranca
 
 - A chave da OpenAI fica apenas no `.env` server-side.
-- Nenhum segredo deve ser colocado em `EXPO_PUBLIC_*`.
+- O frontend deve apontar para a API por `VITE_API_BASE_URL` ou `EXPO_PUBLIC_API_BASE_URL`.
 - O app mobile fala com a OpenAI somente por meio da API local.

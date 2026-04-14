@@ -1,6 +1,7 @@
 .env
 .env.local
 dist/
+build/
 node_modules/
 coverage/
 *.log
@@ -11,3 +12,6 @@ venv/
 snapshots/
 
 .DS_Store
+corretor-de-provas-493220-92993b40dca3.json
+test-results/
+playwright-report/

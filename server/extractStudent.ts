@@ -1,4 +1,4 @@
-import { serverConfig } from "./config";
+import { serverConfig } from "./config.js";
 
 const EXTRACTION_PROMPT = `Analise esta imagem de um documento de aluno universitario.
 Extraia:

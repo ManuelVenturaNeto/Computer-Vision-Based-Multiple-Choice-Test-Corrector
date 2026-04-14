@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { calculatePerformance, buildResultsCsv } from "../src/utils/results";
-import type { Aluno, GabaritoReferencia } from "../src/types";
+import { calculatePerformance, buildResultsCsv } from "../src/utils/results.js";
+import type { Aluno, GabaritoReferencia } from "../src/types.js";
 
 test("calculatePerformance computes acertos and nota", () => {
   const result = calculatePerformance(["A", "B", "C", "D"], ["A", "E", "C", "D"]);
