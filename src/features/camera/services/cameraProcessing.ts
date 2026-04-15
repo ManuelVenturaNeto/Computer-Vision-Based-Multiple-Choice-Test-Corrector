@@ -8,6 +8,7 @@ export interface AnswerSheetReadResponse {
   respostas: string[];
   warnings: string[];
   provider: "jimp";
+  maskImage: string;
   table: {
     x: number;
     y: number;

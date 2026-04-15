@@ -4,6 +4,7 @@ import { FIXED_QUESTION_COUNT, OPCOES } from "../constants";
 
 interface GabaritoRefFormProps {
   capturedImage: string | null;
+  maskImage: string | null;
   answerSheetError: string | null;
   answerSheetInfo: string | null;
   disciplina: string;
@@ -18,6 +19,7 @@ interface GabaritoRefFormProps {
 
 export function GabaritoRefForm({
   capturedImage,
+  maskImage,
   answerSheetError,
   answerSheetInfo,
   disciplina,
@@ -32,34 +34,44 @@ export function GabaritoRefForm({
   return (
     <>
       {capturedImage ? (
-        <div className="flex gap-3 items-start">
-          <img
-            src={capturedImage}
-            alt="Gabarito capturado"
-            className="w-20 h-14 object-cover rounded-xl border border-gray-200"
-          />
-          <div className="flex-1">
-            {answerSheetError ? (
-              <div className="rounded-xl p-2.5 bg-yellow-50 border border-yellow-200">
-                <p className="text-xs text-yellow-700">{answerSheetError}</p>
+        <div className="space-y-2">
+          {maskImage ? (
+            <div>
+              <p className="text-xs text-gray-500 mb-1">Máscara de detecção (grade + marcações)</p>
+              <img
+                src={maskImage}
+                alt="Máscara de detecção"
+                className="w-full rounded-xl border border-gray-200 object-contain"
+                style={{ maxHeight: 220, background: "#111" }}
+              />
+            </div>
+          ) : (
+            <img
+              src={capturedImage}
+              alt="Gabarito capturado"
+              className="w-full h-28 object-cover rounded-xl border border-gray-200"
+            />
+          )}
+          {answerSheetError ? (
+            <div className="rounded-xl p-2.5 bg-yellow-50 border border-yellow-200">
+              <p className="text-xs text-yellow-700">{answerSheetError}</p>
+            </div>
+          ) : (
+            <div
+              className="rounded-xl p-2.5"
+              style={{ backgroundColor: "#EEF3FC" }}
+            >
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <Sparkles size={12} style={{ color: "#003DA5" }} />
+                <span className="text-xs" style={{ color: "#003DA5" }}>
+                  Gabarito lido automaticamente
+                </span>
               </div>
-            ) : (
-              <div
-                className="rounded-xl p-2.5"
-                style={{ backgroundColor: "#EEF3FC" }}
-              >
-                <div className="flex items-center gap-1.5 mb-0.5">
-                  <Sparkles size={12} style={{ color: "#003DA5" }} />
-                  <span className="text-xs" style={{ color: "#003DA5" }}>
-                    Gabarito lido automaticamente
-                  </span>
-                </div>
-                <p className="text-xs text-gray-500">
-                  {answerSheetInfo ?? "Confira as respostas antes de salvar."}
-                </p>
-              </div>
-            )}
-          </div>
+              <p className="text-xs text-gray-500">
+                {answerSheetInfo ?? "Confira as respostas antes de salvar."}
+              </p>
+            </div>
+          )}
         </div>
       ) : (
         <div

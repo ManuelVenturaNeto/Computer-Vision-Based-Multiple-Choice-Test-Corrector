@@ -103,6 +103,7 @@ export function CameraModal({
   const [phase, setPhase] = useState<CameraPhase>("starting");
   const [scanProgress, setScanProgress] = useState(0);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [maskImage, setMaskImage] = useState<string | null>(null);
   const [processingStatus, setProcessingStatus] = useState("");
   const [cameraErrorMessage, setCameraErrorMessage] = useState<string | null>(null);
   const [ocrError, setOcrError] = useState<string | null>(null);
@@ -237,6 +238,7 @@ export function CameraModal({
 
   const resetToCamera = () => {
     setCapturedImage(null);
+    setMaskImage(null);
     setProcessingStatus("");
     setScanProgress(0);
     setErrors({});
@@ -291,6 +293,7 @@ export function CameraModal({
       setErrors({});
       setRespostas(resizeAnswers(result.respostas, totalQuestoes));
       setAnswerSheetInfo(buildAnswerSheetSummary(result));
+      setMaskImage(result.maskImage ?? null);
       setScanProgress(100);
     } catch (error) {
       setScanProgress(0);
@@ -554,6 +557,7 @@ export function CameraModal({
                 ) : mode === "gabarito-ref" ? (
                   <GabaritoRefForm
                     capturedImage={capturedImage}
+                    maskImage={maskImage}
                     answerSheetError={answerSheetError}
                     answerSheetInfo={answerSheetInfo}
                     disciplina={disciplina}
@@ -569,6 +573,7 @@ export function CameraModal({
                   <GabaritoAlunoForm
                     alunoNome={alunoNome}
                     capturedImage={capturedImage}
+                    maskImage={maskImage}
                     answerSheetError={answerSheetError}
                     answerSheetInfo={answerSheetInfo}
                     respostas={respostas}
