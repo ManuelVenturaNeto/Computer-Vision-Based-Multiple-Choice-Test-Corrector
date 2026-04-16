@@ -5,7 +5,6 @@ import { OPCOES } from "../constants";
 interface GabaritoAlunoFormProps {
   alunoNome?: string;
   capturedImage: string | null;
-  maskImage: string | null;
   answerSheetError: string | null;
   answerSheetInfo: string | null;
   respostas: string[];
@@ -18,7 +17,6 @@ interface GabaritoAlunoFormProps {
 export function GabaritoAlunoForm({
   alunoNome,
   capturedImage,
-  maskImage,
   answerSheetError,
   answerSheetInfo,
   respostas,
@@ -41,23 +39,11 @@ export function GabaritoAlunoForm({
 
       {capturedImage && (
         <div className="space-y-2">
-          {maskImage ? (
-            <div>
-              <p className="text-xs text-gray-500 mb-1">Máscara de detecção (grade + marcações)</p>
-              <img
-                src={maskImage}
-                alt="Máscara de detecção"
-                className="w-full rounded-xl border border-gray-200 object-contain"
-                style={{ maxHeight: 220, background: "#111" }}
-              />
-            </div>
-          ) : (
-            <img
-              src={capturedImage}
-              alt="Folha capturada"
-              className="w-full h-28 object-cover rounded-xl border border-gray-200"
-            />
-          )}
+          <img
+            src={capturedImage}
+            alt="Folha capturada"
+            className="w-full h-28 object-cover rounded-xl border border-gray-200"
+          />
           {answerSheetError ? (
             <div className="rounded-xl p-2.5 bg-yellow-50 border border-yellow-200">
               <p className="text-xs text-yellow-700">{answerSheetError}</p>

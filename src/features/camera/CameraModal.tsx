@@ -7,10 +7,8 @@ import type { GabaritoReferencia } from "@/types";
 import { CameraPreview } from "./CameraPreview";
 import {
   FIXED_QUESTION_COUNT,
-  OPCOES,
   buildAnswerSheetSummary,
   resizeAnswers,
-  type LiveAnswerSheetDetection,
   type CameraMode,
   type CameraPhase,
 } from "./constants";
@@ -20,7 +18,6 @@ import { GabaritoRefForm } from "./forms/GabaritoRefForm";
 import { useCameraStream } from "./hooks/useCameraStream";
 import { ProcessingView } from "./ProcessingView";
 import {
-  type AnswerSheetReadResponse,
   extractAlunoFromImage,
   readAnswerSheetFromImage,
 } from "./services/cameraProcessing";
@@ -35,56 +32,73 @@ interface CameraModalProps {
   onGabaritoAluno?: (respostas: string[]) => void;
 }
 
-function readFileAsDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
+const MAX_SELECTED_IMAGE_DIMENSION = 1600;
+const SELECTED_IMAGE_QUALITY = 0.82;
 
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        resolve(reader.result);
-        return;
-      }
-
-      reject(new Error("Nao foi possivel ler a imagem selecionada."));
-    };
-
-    reader.onerror = () => {
-      reject(new Error("Nao foi possivel ler a imagem selecionada."));
-    };
-
-    reader.readAsDataURL(file);
+function waitForNextPaint() {
+  return new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => resolve());
   });
 }
 
-function buildLiveAnswerSheetDetection(
-  result: AnswerSheetReadResponse,
-  frameWidth: number,
-  frameHeight: number
-): LiveAnswerSheetDetection {
-  const markedAnswers = result.respostas.flatMap((answer, row) => {
-    const col = OPCOES.indexOf(answer as (typeof OPCOES)[number]);
-    if (col < 0) return [];
-
-    return [
-      {
-        row,
-        col,
-        option: answer,
-        centerX: result.table.x + (col + 0.5) * result.table.cellWidth,
-        centerY: result.table.y + (row + 0.5) * result.table.cellHeight,
-      },
-    ];
+function loadImageFromUrl(imageUrl: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => {
+      reject(new Error("Nao foi possivel ler a imagem selecionada."));
+    };
+    image.src = imageUrl;
   });
+}
 
-  const gapRows = result.respostas.flatMap((answer, row) => (answer ? [] : [row]));
+function readFileAsDataUrl(file: File) {
+  if (!file.type.startsWith("image/")) {
+    return Promise.reject(new Error("Selecione uma imagem valida."));
+  }
 
-  return {
-    frameWidth,
-    frameHeight,
-    table: result.table,
-    markedAnswers,
-    gapRows,
-  };
+  const imageUrl = URL.createObjectURL(file);
+
+  return loadImageFromUrl(imageUrl)
+    .then((image) => {
+      const width = image.naturalWidth || image.width;
+      const height = image.naturalHeight || image.height;
+
+      if (!width || !height) {
+        throw new Error("Nao foi possivel ler a imagem selecionada.");
+      }
+
+      const scale = Math.min(
+        1,
+        MAX_SELECTED_IMAGE_DIMENSION / Math.max(width, height)
+      );
+      const targetWidth = Math.max(1, Math.round(width * scale));
+      const targetHeight = Math.max(1, Math.round(height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+
+      const context = canvas.getContext("2d");
+      if (!context) {
+        throw new Error("Nao foi possivel preparar a imagem selecionada.");
+      }
+
+      context.fillStyle = "#FFFFFF";
+      context.fillRect(0, 0, targetWidth, targetHeight);
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = "high";
+      context.drawImage(image, 0, 0, targetWidth, targetHeight);
+
+      return canvas.toDataURL("image/jpeg", SELECTED_IMAGE_QUALITY);
+    })
+    .catch((error: unknown) => {
+      throw error instanceof Error
+        ? error
+        : new Error("Nao foi possivel ler a imagem selecionada.");
+    })
+    .finally(() => {
+      URL.revokeObjectURL(imageUrl);
+    });
 }
 
 export function CameraModal({
@@ -101,15 +115,12 @@ export function CameraModal({
   const fileInputId = useId();
 
   const [phase, setPhase] = useState<CameraPhase>("starting");
-  const [scanProgress, setScanProgress] = useState(0);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
-  const [maskImage, setMaskImage] = useState<string | null>(null);
   const [processingStatus, setProcessingStatus] = useState("");
   const [cameraErrorMessage, setCameraErrorMessage] = useState<string | null>(null);
   const [ocrError, setOcrError] = useState<string | null>(null);
   const [answerSheetError, setAnswerSheetError] = useState<string | null>(null);
   const [answerSheetInfo, setAnswerSheetInfo] = useState<string | null>(null);
-  const [liveDetection, setLiveDetection] = useState<LiveAnswerSheetDetection | null>(null);
   const [disciplina, setDisciplina] = useState("");
   const [dataProva, setDataProva] = useState(new Date().toISOString().split("T")[0]);
   const [respostas, setRespostas] = useState<string[]>(
@@ -118,6 +129,7 @@ export function CameraModal({
   const [nome, setNome] = useState("");
   const [matricula, setMatricula] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const isAlunoInfoMode = mode === "aluno-info";
 
   const openCameraPreview = useCallback(async () => {
     setPhase("starting");
@@ -145,108 +157,14 @@ export function CameraModal({
     };
   }, [openCameraPreview, stopCamera]);
 
-  useEffect(() => {
-    if (phase !== "preview" || mode === "aluno-info") {
-      setLiveDetection(null);
-      return;
-    }
-
-    let cancelled = false;
-    let timeoutId: number | undefined;
-    let running = false;
-
-    // Captura um frame reduzido para a prévia ao vivo, evitando sobrecarregar a API.
-    const capturePreviewFrame = () => {
-      if (!videoRef.current || !canvasRef.current) return null;
-
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      if (
-        video.videoWidth <= 0 ||
-        video.videoHeight <= 0 ||
-        video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA
-      ) {
-        return null;
-      }
-
-      const maxWidth = 960;
-      const scale = Math.min(1, maxWidth / video.videoWidth);
-
-      canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
-      canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
-
-      const context = canvas.getContext("2d");
-      if (!context) return null;
-
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-      return {
-        imageData: canvas.toDataURL("image/jpeg", 0.72),
-        width: canvas.width,
-        height: canvas.height,
-      };
-    };
-
-    const analyzePreviewFrame = async () => {
-      if (cancelled || running) return;
-
-      const frame = capturePreviewFrame();
-      if (!frame) {
-        timeoutId = window.setTimeout(analyzePreviewFrame, 400);
-        return;
-      }
-
-      running = true;
-
-      try {
-        /* 
-          Reaproveita a visão computacional do backend (Jimp) para analisar frames
-          da câmera ao vivo. Quando a tabela é detectada, desenhamos a grade real
-          encontrada e marcamos em vermelho apenas as respostas válidas.
-        */
-        const result = await readAnswerSheetFromImage(
-          frame.imageData,
-          FIXED_QUESTION_COUNT
-        );
-
-        if (!cancelled) {
-          setLiveDetection(
-            buildLiveAnswerSheetDetection(result, frame.width, frame.height)
-          );
-        }
-      } catch {
-        if (!cancelled) {
-          setLiveDetection(null);
-        }
-      } finally {
-        running = false;
-        if (!cancelled) {
-          timeoutId = window.setTimeout(analyzePreviewFrame, 900);
-        }
-      }
-    };
-
-    timeoutId = window.setTimeout(analyzePreviewFrame, 300);
-
-    return () => {
-      cancelled = true;
-      if (timeoutId !== undefined) {
-        window.clearTimeout(timeoutId);
-      }
-    };
-  }, [mode, phase, videoRef]);
-
   const resetToCamera = () => {
     setCapturedImage(null);
-    setMaskImage(null);
     setProcessingStatus("");
-    setScanProgress(0);
     setErrors({});
     setCameraErrorMessage(null);
     setOcrError(null);
     setAnswerSheetError(null);
     setAnswerSheetInfo(null);
-    setLiveDetection(null);
     void openCameraPreview();
   };
 
@@ -256,6 +174,7 @@ export function CameraModal({
     setPhase("processing");
     setProcessingStatus("Capturando imagem...");
     setOcrError(null);
+    await waitForNextPaint();
 
     try {
       setProcessingStatus("Analisando com IA...");
@@ -275,28 +194,26 @@ export function CameraModal({
     setCapturedImage(imageData);
     stopCamera();
     setPhase("processing");
-    setScanProgress(15);
-    setProcessingStatus("Capturando imagem...");
+    setProcessingStatus("Processando imagem...");
     setAnswerSheetError(null);
     setAnswerSheetInfo(null);
+    await waitForNextPaint();
 
     try {
-      setProcessingStatus("Localizando a grade do gabarito...");
-      setScanProgress(45);
-
-      const result = await readAnswerSheetFromImage(imageData, FIXED_QUESTION_COUNT);
+      const result = await readAnswerSheetFromImage(
+        imageData,
+        FIXED_QUESTION_COUNT,
+        (status) => {
+          setProcessingStatus(status);
+        }
+      );
       const totalQuestoes =
         mode === "gabarito-aluno" ? numQuestoes : FIXED_QUESTION_COUNT;
 
-      setScanProgress(85);
-      setProcessingStatus("Preenchendo respostas detectadas...");
       setErrors({});
       setRespostas(resizeAnswers(result.respostas, totalQuestoes));
       setAnswerSheetInfo(buildAnswerSheetSummary(result));
-      setMaskImage(result.maskImage ?? null);
-      setScanProgress(100);
     } catch (error) {
-      setScanProgress(0);
       setAnswerSheetError(
         error instanceof Error
           ? error.message
@@ -307,11 +224,13 @@ export function CameraModal({
     }
   };
 
-  const handleCapture = async () => {
-    const imageData = captureFrame(canvasRef);
-    if (!imageData) return;
-
-    if (mode === "aluno-info") {
+  /*
+    A camera possui dois fluxos independentes:
+    1. aluno-info: mantem a leitura atual por OCR/API
+    2. gabarito: so processa depois da foto, executando o pipeline do algo.html
+  */
+  const processCapturedImage = async (imageData: string) => {
+    if (isAlunoInfoMode) {
       await processAlunoImage(imageData);
       return;
     }
@@ -319,20 +238,30 @@ export function CameraModal({
     await processGabaritoImage(imageData);
   };
 
+  const handleCapture = async () => {
+    const imageData = captureFrame(canvasRef);
+    if (!imageData) return;
+    await processCapturedImage(imageData);
+  };
+
   const handleSelecionarArquivo = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     try {
-      const imageData = await readFileAsDataUrl(file);
+      stopCamera();
+      setCapturedImage(null);
+      setPhase("processing");
+      setProcessingStatus("Preparando foto...");
+      setOcrError(null);
+      setAnswerSheetError(null);
+      setAnswerSheetInfo(null);
+      await waitForNextPaint();
 
-      if (mode === "aluno-info") {
-        await processAlunoImage(imageData);
-      } else {
-        await processGabaritoImage(imageData);
-      }
+      const imageData = await readFileAsDataUrl(file);
+      await processCapturedImage(imageData);
     } catch (error) {
-      if (mode === "aluno-info") {
+      if (isAlunoInfoMode) {
         setOcrError(
           error instanceof Error ? error.message : "Nao foi possivel usar a imagem selecionada."
         );
@@ -507,10 +436,7 @@ export function CameraModal({
         {phase === "preview" && (
           <CameraPreview
             mode={mode}
-            liveDetection={liveDetection}
-            scanProgress={scanProgress}
             videoRef={videoRef}
-            videoElement={videoRef.current}
             fileInputId={fileInputId}
             onCapture={handleCapture}
             onManual={handleManualForm}
@@ -535,8 +461,8 @@ export function CameraModal({
           >
             <div className="flex-1 overflow-y-auto">
               <div className="p-4 space-y-4">
-                {mode === "aluno-info" ? (
-                  <AlunoInfoForm
+                  {isAlunoInfoMode ? (
+                    <AlunoInfoForm
                     capturedImage={capturedImage}
                     ocrError={ocrError}
                     nome={nome}
@@ -557,7 +483,6 @@ export function CameraModal({
                 ) : mode === "gabarito-ref" ? (
                   <GabaritoRefForm
                     capturedImage={capturedImage}
-                    maskImage={maskImage}
                     answerSheetError={answerSheetError}
                     answerSheetInfo={answerSheetInfo}
                     disciplina={disciplina}
@@ -573,7 +498,6 @@ export function CameraModal({
                   <GabaritoAlunoForm
                     alunoNome={alunoNome}
                     capturedImage={capturedImage}
-                    maskImage={maskImage}
                     answerSheetError={answerSheetError}
                     answerSheetInfo={answerSheetInfo}
                     respostas={respostas}
@@ -596,7 +520,7 @@ export function CameraModal({
                 <span>
                   {mode === "gabarito-ref"
                     ? "Salvar Gabarito Referência"
-                    : mode === "aluno-info"
+                    : isAlunoInfoMode
                       ? "Registrar Aluno"
                       : "Salvar Gabarito do Aluno"}
                 </span>

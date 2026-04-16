@@ -1,3 +1,5 @@
+import { processAnswerSheet } from "./opencvAnswerSheet";
+
 type StudentExtractionResponse = {
   nome: string;
   matricula: string;
@@ -7,7 +9,7 @@ export interface AnswerSheetReadResponse {
   numQuestoes: number;
   respostas: string[];
   warnings: string[];
-  provider: "jimp";
+  provider: "jimp" | "opencv.js";
   maskImage: string;
   table: {
     x: number;
@@ -78,10 +80,8 @@ export async function extractAlunoFromImage(imageDataUrl: string) {
 
 export async function readAnswerSheetFromImage(
   imageDataUrl: string,
-  expectedQuestionCount?: number
+  _expectedQuestionCount?: number,
+  onProgress?: (status: string, progress?: number) => void
 ) {
-  return postJson<AnswerSheetReadResponse>("/api/extract-answer-sheet", {
-    imageBase64: imageDataUrl,
-    expectedQuestionCount,
-  });
+  return processAnswerSheet(imageDataUrl, onProgress);
 }

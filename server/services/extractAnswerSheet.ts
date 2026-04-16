@@ -28,23 +28,17 @@ interface FullTableRegion {
 }
 
 export const ANSWER_SHEET_READER_CONFIG = {
-  contrast: 0.5,
-  minTableWidth: 300,
-  minTableHeight: 200,
-  horizontalLineDensityRatio: 0.12,
-  verticalLineDensityRatio: 0.12,
-  peakMergeDistance: 10,
-  defaultQuestionCount: 10,
-  maxQuestionCount: 10,
-  totalRows: 11,
-  totalCols: 6,
-  ignoreTopRows: 1,
-  ignoreLeftCols: 1,
-  cellSampleMargin: 0.05,
-  minMarkedDifference: 20,
-  duplicateTolerance: 8,
-  blankRowIntensity: 200,
-  fullyDarkRowIntensity: 150,
+  totalRows: 11,                 // Número total de linhas (incluindo cabeçalho)
+  totalCols: 6,                  // Número total de colunas (incluindo numeração)
+  ignoreTopRows: 1,              // Linhas a ignorar no topo (cabeçalho)
+  ignoreLeftCols: 1,             // Colunas a ignorar à esquerda (numeração)
+  defaultQuestionCount: 10,      // Número de questões (úteis)
+  cellSampleMargin: 0.1,         // Margem interna da célula para evitar bordas (10%)
+  minMarkedDifference: 20,       // Diferença mínima de intensidade para considerar marcado
+  duplicateTolerance: 8,         // Tolerância para detectar múltiplas marcações (não usado na nova lógica)
+  blankRowIntensity: 200,        // Intensidade acima da qual considera linha em branco
+  fullyDarkRowIntensity: 150,    // Intensidade abaixo da qual considera linha toda marcada
+  contrast: 0.5,               // Valor padrão (pode ser 0.5 ou o que o repositório usava)
 } as const;
 
 const USEFUL_ROW_COUNT =
@@ -82,7 +76,7 @@ export interface AnswerSheetReadOptions {
   expectedQuestionCount?: number;
 }
 
-export class AnswerSheetReadError extends Error {}
+export class AnswerSheetReadError extends Error { }
 
 function clampQuestionCount(value: unknown) {
   const parsed = Number(value);
@@ -148,15 +142,32 @@ function calculateOtsuThresholdFromHistogram(histogram: number[], total: number)
   return threshold;
 }
 
-function calculateOtsuThreshold(values: number[]) {
-  const histogram = new Array(256).fill(0);
-
-  values.forEach((value) => {
-    const bucket = Math.max(0, Math.min(255, Math.floor(value)));
-    histogram[bucket] += 1;
-  });
-
-  return calculateOtsuThresholdFromHistogram(histogram, values.length);
+function calculateOtsuThreshold(intensities: number[]): number {
+  const hist = new Array(256).fill(0);
+  for (const val of intensities) {
+    const idx = Math.floor(val);
+    if (idx >= 0 && idx < 256) hist[idx]++;
+  }
+  const total = intensities.length;
+  let sum = 0;
+  for (let i = 0; i < 256; i++) sum += i * hist[i];
+  let sumB = 0, wB = 0, wF = 0;
+  let varMax = 0, threshold = 0;
+  for (let i = 0; i < 256; i++) {
+    wB += hist[i];
+    if (wB === 0) continue;
+    wF = total - wB;
+    if (wF === 0) break;
+    sumB += i * hist[i];
+    const mB = sumB / wB;
+    const mF = (sum - sumB) / wF;
+    const varBetween = wB * wF * (mB - mF) * (mB - mF);
+    if (varBetween > varMax) {
+      varMax = varBetween;
+      threshold = i;
+    }
+  }
+  return threshold;
 }
 
 function buildBinaryImage(grayscaleImage: CloneableBitmapImage) {
@@ -257,81 +268,36 @@ function buildProjectionSums(binaryImage: BitmapLikeImage) {
 function findUsefulTableRegion(
   binaryImage: BitmapLikeImage,
   expectedQuestionCount?: number
-) {
+): { fullTable: FullTableRegion; usefulTable: TableRegion } {
   const width = binaryImage.bitmap.width;
   const height = binaryImage.bitmap.height;
-  const { rowSums, colSums } = buildProjectionSums(binaryImage);
 
-  const horizontalLines = findPeakRegions(
-    rowSums,
-    width * ANSWER_SHEET_READER_CONFIG.horizontalLineDensityRatio,
-    ANSWER_SHEET_READER_CONFIG.peakMergeDistance
-  );
-
-  if (horizontalLines.length < 2) {
-    throw new AnswerSheetReadError(
-      "Nao foi possivel detectar linhas suficientes da tabela."
-    );
-  }
-
-  const verticalLines = findPeakRegions(
-    colSums,
-    height * ANSWER_SHEET_READER_CONFIG.verticalLineDensityRatio,
-    ANSWER_SHEET_READER_CONFIG.peakMergeDistance
-  );
-
-  if (verticalLines.length < 2) {
-    throw new AnswerSheetReadError(
-      "Nao foi possivel detectar colunas suficientes da tabela."
-    );
-  }
-
-  const usefulRows =
-    clampQuestionCount(expectedQuestionCount) ??
-    ANSWER_SHEET_READER_CONFIG.defaultQuestionCount;
-  const fullRows = usefulRows + ANSWER_SHEET_READER_CONFIG.ignoreTopRows;
-  const fullCols = USEFUL_COL_COUNT + ANSWER_SHEET_READER_CONFIG.ignoreLeftCols;
-
-  const topY = horizontalLines[0];
-  const bottomY = horizontalLines[horizontalLines.length - 1];
-  const leftX = verticalLines[0];
-  const rightX = verticalLines[verticalLines.length - 1];
+  // Número de questões úteis = totalRows - ignoreTopRows
+  const usefulRows = expectedQuestionCount ?? (ANSWER_SHEET_READER_CONFIG.totalRows - ANSWER_SHEET_READER_CONFIG.ignoreTopRows);
+  const fullRows = ANSWER_SHEET_READER_CONFIG.totalRows;
+  const fullCols = ANSWER_SHEET_READER_CONFIG.totalCols;
 
   const fullTable: FullTableRegion = {
-    x: leftX,
-    y: topY,
-    width: rightX - leftX,
-    height: bottomY - topY,
-    cellWidth: (rightX - leftX) / fullCols,
-    cellHeight: (bottomY - topY) / fullRows,
+    x: 0,
+    y: 0,
+    width: width,
+    height: height,
+    cellWidth: width / fullCols,
+    cellHeight: height / fullRows,
   };
 
-  if (
-    fullTable.width < ANSWER_SHEET_READER_CONFIG.minTableWidth ||
-    fullTable.height < ANSWER_SHEET_READER_CONFIG.minTableHeight
-  ) {
-    throw new AnswerSheetReadError(
-      "Regiao da tabela muito pequena. Verifique a imagem capturada."
-    );
-  }
-
-  return {
-    fullTable,
-    usefulTable: {
-      x:
-        fullTable.x +
-        fullTable.cellWidth * ANSWER_SHEET_READER_CONFIG.ignoreLeftCols,
-      y:
-        fullTable.y +
-        fullTable.cellHeight * ANSWER_SHEET_READER_CONFIG.ignoreTopRows,
-      width: fullTable.cellWidth * USEFUL_COL_COUNT,
-      height: fullTable.cellHeight * usefulRows,
-      cellWidth: fullTable.cellWidth,
-      cellHeight: fullTable.cellHeight,
-      rowCount: usefulRows,
-      colCount: USEFUL_COL_COUNT,
-    } satisfies TableRegion,
+  const usefulTable: TableRegion = {
+    x: fullTable.cellWidth * ANSWER_SHEET_READER_CONFIG.ignoreLeftCols,
+    y: fullTable.cellHeight * ANSWER_SHEET_READER_CONFIG.ignoreTopRows,
+    width: fullTable.cellWidth * (fullCols - ANSWER_SHEET_READER_CONFIG.ignoreLeftCols),
+    height: fullTable.cellHeight * usefulRows,
+    cellWidth: fullTable.cellWidth,
+    cellHeight: fullTable.cellHeight,
+    rowCount: usefulRows,
+    colCount: fullCols - ANSWER_SHEET_READER_CONFIG.ignoreLeftCols,
   };
+
+  return { fullTable, usefulTable };
 }
 
 // Crops the detected table region from `src` and scales it to NORMALIZED_WIDTH × NORMALIZED_HEIGHT
@@ -410,11 +376,11 @@ function analyzeCellMeanIntensity(
   let pixelCount = 0;
   let pixelSum = 0;
 
-  for (let py = startY; py < endY; py += 1) {
-    for (let px = startX; px < endX; px += 1) {
+  for (let py = startY; py < endY; py++) {
+    for (let px = startX; px < endX; px++) {
       const idx = (py * grayscaleImage.bitmap.width + px) * 4;
       pixelSum += grayscaleImage.bitmap.data[idx];
-      pixelCount += 1;
+      pixelCount++;
     }
   }
 
@@ -424,8 +390,8 @@ function analyzeCellMeanIntensity(
 function analyzeCells(grayscaleImage: BitmapLikeImage, table: TableRegion): Cell[] {
   const cells: Cell[] = [];
 
-  for (let row = 0; row < table.rowCount; row += 1) {
-    for (let col = 0; col < table.colCount; col += 1) {
+  for (let row = 0; row < table.rowCount; row++) {
+    for (let col = 0; col < table.colCount; col++) {
       const x = table.x + col * table.cellWidth;
       const y = table.y + row * table.cellHeight;
 
@@ -450,91 +416,50 @@ function extractAnswers(
   cells: Cell[],
   rowCount: number,
   threshold: number
-) {
+): { respostas: string[]; warnings: string[] } {
   const respostas: string[] = [];
   const warnings: string[] = [];
   let blankLikeRows = 0;
   let fullyDarkRows = 0;
 
-  for (let row = 0; row < rowCount; row += 1) {
-    const rowCells = cells
-      .filter((cell) => cell.row === row)
-      .sort((left, right) => left.col - right.col);
-
-    const rowIntensities = rowCells.map((cell) => cell.intensity);
-    const sortedByDarkness = [...rowCells].sort(
-      (left, right) => left.intensity - right.intensity
-    );
-
-    const bestCell = sortedByDarkness[0];
-    const secondCell = sortedByDarkness[1];
-    const minIntensity = bestCell?.intensity ?? 255;
-    const secondIntensity = secondCell?.intensity ?? 255;
+  for (let row = 0; row < rowCount; row++) {
+    const rowCells = cells.filter(cell => cell.row === row).sort((a, b) => a.col - b.col);
+    const rowIntensities = rowCells.map(cell => cell.intensity);
+    const minIntensity = Math.min(...rowIntensities);
     const maxIntensity = Math.max(...rowIntensities);
-    const contrastDelta = maxIntensity - minIntensity;
+    const bestCol = rowCells.findIndex(cell => cell.intensity === minIntensity);
 
-    const belowThreshold = Math.floor(minIntensity) <= threshold;
-    const hasStrongContrast =
-      contrastDelta > ANSWER_SHEET_READER_CONFIG.minMarkedDifference;
-    const hasCompetingDarkCell =
-      Math.floor(secondIntensity) <= threshold &&
-      secondIntensity - minIntensity <=
-        ANSWER_SHEET_READER_CONFIG.duplicateTolerance;
-
+    // Verifica se a linha está em branco (todas células muito claras)
     if (minIntensity > ANSWER_SHEET_READER_CONFIG.blankRowIntensity) {
-      blankLikeRows += 1;
+      blankLikeRows++;
     }
-
+    // Verifica se a linha está totalmente escura (todas células marcadas)
     if (maxIntensity < ANSWER_SHEET_READER_CONFIG.fullyDarkRowIntensity) {
-      fullyDarkRows += 1;
+      fullyDarkRows++;
     }
 
-    if (belowThreshold && hasStrongContrast && !hasCompetingDarkCell && bestCell) {
-      respostas.push(ANSWER_OPTIONS[bestCell.col] ?? "");
-      continue;
+    // Decide se a célula mais escura é considerada marcada
+    // No nosso script, usamos minIntensity <= threshold
+    // E também verificamos se a diferença entre a mais escura e as outras é significativa (opcional)
+    // Para simplificar, usamos apenas o limiar Otsu (threshold)
+    if (minIntensity <= threshold) {
+      respostas.push(ANSWER_OPTIONS[bestCol] ?? "");
+    } else {
+      respostas.push("");
+      warnings.push(`Questão ${row + 1} sem uma marcação válida destacada.`);
     }
-
-    respostas.push("");
-
-    if (hasCompetingDarkCell) {
-      const markedOptions = sortedByDarkness
-        .filter(
-          (cell) =>
-            Math.floor(cell.intensity) <= threshold &&
-            cell.intensity - minIntensity <=
-              ANSWER_SHEET_READER_CONFIG.duplicateTolerance
-        )
-        .map((cell) => ANSWER_OPTIONS[cell.col] ?? "?")
-        .join(", ");
-
-      warnings.push(
-        `Questao ${row + 1} com multiplas marcacoes detectadas: ${markedOptions}.`
-      );
-      continue;
-    }
-
-    warnings.push(
-      `Questao ${row + 1} sem uma marcacao valida destacada.`
-    );
   }
 
+  // Validação do gabarito (igual ao nosso script)
   const validAnswers = respostas.filter(Boolean).length;
   if (validAnswers === 0) {
     if (blankLikeRows === rowCount) {
-      throw new AnswerSheetReadError(
-        "Gabarito em branco - nenhuma resposta detectada."
-      );
+      throw new AnswerSheetReadError("Gabarito em branco - nenhuma resposta detectada.");
     }
-
     if (fullyDarkRows === rowCount) {
-      throw new AnswerSheetReadError(
-        "Gabarito invalido - todas as celulas parecem marcadas."
-      );
+      throw new AnswerSheetReadError("Gabarito inválido - todas as células parecem marcadas.");
     }
-
-    throw new AnswerSheetReadError(
-      "Marcacoes inconsistentes - verifique se ha exatamente uma resposta por questao."
-    );
+    throw new AnswerSheetReadError("Marcações inconsistentes - verifique se há exatamente uma resposta por questão.");
   }
 
   return { respostas, warnings };
@@ -709,12 +634,9 @@ export async function extractAnswerSheetFromImageBase64(
 
   const normalizedTable = buildNormalizedTable(usefulTable.rowCount);
   const cells = analyzeCells(normalizedGray, normalizedTable);
-  const cellThreshold = calculateOtsuThreshold(cells.map((cell) => cell.intensity));
-  const { respostas, warnings } = extractAnswers(
-    cells,
-    normalizedTable.rowCount,
-    cellThreshold
-  );
+  const cellIntensities = cells.map(cell => cell.intensity);
+  const otsuThreshold = calculateOtsuThreshold(cellIntensities);
+  const { respostas, warnings } = extractAnswers(cells, usefulTable.rowCount, otsuThreshold)
 
   const maskImage = await buildMaskImage(normalizedColor, respostas);
 

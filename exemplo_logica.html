@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Leitor de Gabarito - 11x6 (ignorando cabeçalho e numeração)</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', monospace;
+            max-width: 1400px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #1e1e2f;
+            color: #eee;
+        }
+
+        .container {
+            background: #2d2d3a;
+            border-radius: 16px;
+            padding: 20px;
+        }
+
+        canvas {
+            border: 2px solid #555;
+            margin: 10px;
+            background: #222;
+            max-width: 100%;
+        }
+
+        .flex {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            justify-content: center;
+        }
+
+        button,
+        input {
+            margin: 8px;
+            padding: 8px 16px;
+            background: #3a3a4a;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        .log-area {
+            background: #0f0f17;
+            color: #0f0;
+            font-family: monospace;
+            padding: 12px;
+            border-radius: 8px;
+            height: 250px;
+            overflow-y: scroll;
+            font-size: 12px;
+            margin-top: 16px;
+        }
+
+        .result-table {
+            background: #1a1a2a;
+            padding: 8px;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 13px;
+            margin-top: 10px;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+
+        th,
+        td {
+            border: 1px solid #555;
+            padding: 4px 8px;
+            text-align: center;
+        }
+
+        .correct {
+            background-color: #1e3a2e;
+            color: #8bc34a;
+        }
+
+        .wrong {
+            background-color: #5a1e1e;
+            color: #ff8a80;
+        }
+
+        .warning {
+            background-color: #5a4a1e;
+            color: #ffd966;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>📸 Leitor de Gabarito - 11 linhas × 6 colunas</h1>
+        <p>O gabarito possui 11 linhas (primeira = cabeçalho) e 6 colunas (primeira = numeração). As respostas estão nas
+            10×5 células internas. O sistema ignora cabeçalho e numeração automaticamente.</p>
+        <input type="file" id="upload" accept="image/*">
+        <button id="process">▶ Processar Imagem</button>
+
+        <div class="flex">
+            <div>
+                <h3>Original</h3><canvas id="originalCanvas" width="600" height="400"></canvas>
+            </div>
+            <div>
+                <h3>Resultado (círculos vermelhos)</h3><canvas id="resultCanvas" width="600" height="400"></canvas>
+            </div>
+        </div>
+        <div class="flex">
+            <div>
+                <h3>Máscara (grade roxa + respostas vermelhas)</h3><canvas id="maskCanvas" width="400"
+                    height="500"></canvas>
+            </div>
+            <div>
+                <h3>📊 Detecção (10 questões)</h3>
+                <div id="detected" class="result-table">-</div>
+                <div style="margin-top: 10px;">
+                    <label>🎯 Gabarito Correto (opcional): <input type="text" id="gabaritoInput"
+                            placeholder="ex: B,C,E,C,D,A,B,C,D,E" size="30"></label>
+                    <button id="applyGabarito">Comparar</button>
+                </div>
+                <div id="comparacao" class="result-table" style="margin-top: 10px;"></div>
+            </div>
+        </div>
+        <div class="log-area" id="logPanel"></div>
+    </div>
+
+    <script>
+        const logPanel = document.getElementById('logPanel');
+        function addLog(msg, type = 'info') {
+            const ts = new Date().toLocaleTimeString();
+            const prefix = type === 'error' ? '❌' : (type === 'warn' ? '⚠️' : '🔹');
+            logPanel.innerHTML += `[${ts}] ${prefix} ${msg}<br>`;
+            logPanel.scrollTop = logPanel.scrollHeight;
+            console.log(msg);
+        }
+
+        let cvReady = false;
+        function onOpenCvReady() { cvReady = true; addLog('✅ OpenCV.js carregado'); }
+        const script = document.createElement('script');
+        script.src = 'https://docs.opencv.org/4.x/opencv.js';
+        script.onload = onOpenCvReady;
+        document.head.appendChild(script);
+
+        const fileInput = document.getElementById('upload');
+        const processBtn = document.getElementById('process');
+        const originalCanvas = document.getElementById('originalCanvas');
+        const resultCanvas = document.getElementById('resultCanvas');
+        const maskCanvas = document.getElementById('maskCanvas');
+        const gabaritoInput = document.getElementById('gabaritoInput');
+        const applyGabaritoBtn = document.getElementById('applyGabarito');
+        const detectedDiv = document.getElementById('detected');
+        const comparacaoDiv = document.getElementById('comparacao');
+
+        let currentDetected = [];
+
+        fileInput.onchange = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const img = new Image();
+            img.onload = () => {
+                originalCanvas.width = img.width;
+                originalCanvas.height = img.height;
+                originalCanvas.getContext('2d').drawImage(img, 0, 0);
+                resultCanvas.width = img.width;
+                resultCanvas.height = img.height;
+                resultCanvas.getContext('2d').clearRect(0, 0, resultCanvas.width, resultCanvas.height);
+                maskCanvas.width = 400;
+                maskCanvas.height = 500;
+                maskCanvas.getContext('2d').clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+                addLog(`📸 Imagem carregada: ${img.width}x${img.height}`);
+            };
+            img.src = URL.createObjectURL(file);
+        };
+
+        function calcularLimiarAutomatico(intensidades) {
+            let hist = new Array(256).fill(0);
+            for (let val of intensidades) {
+                let idx = Math.floor(val);
+                if (idx >= 0 && idx < 256) hist[idx]++;
+            }
+            let total = intensidades.length;
+            let sum = 0;
+            for (let i = 0; i < 256; i++) sum += i * hist[i];
+            let sumB = 0, wB = 0, wF = 0;
+            let varMax = 0, threshold = 0;
+            for (let i = 0; i < 256; i++) {
+                wB += hist[i];
+                if (wB === 0) continue;
+                wF = total - wB;
+                if (wF === 0) break;
+                sumB += i * hist[i];
+                let mB = sumB / wB;
+                let mF = (sum - sumB) / wF;
+                let varBetween = wB * wF * (mB - mF) * (mB - mF);
+                if (varBetween > varMax) {
+                    varMax = varBetween;
+                    threshold = i;
+                }
+            }
+            return threshold;
+        }
+
+        processBtn.onclick = async () => {
+            if (!cvReady) { addLog('Aguardando OpenCV...', 'error'); return; }
+            if (!originalCanvas.width) { addLog('Nenhuma imagem', 'error'); return; }
+
+            const src = cv.imread(originalCanvas);
+            addLog(`🚀 Início (${src.cols}x${src.rows})`);
+
+            // ---- 1. Warp (correção de perspectiva) ----
+            let gray = new cv.Mat();
+            cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+            let blurred = new cv.Mat();
+            cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
+            let thresh = new cv.Mat();
+            cv.threshold(blurred, thresh, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
+            let contours = new cv.MatVector();
+            let hierarchy = new cv.Mat();
+            cv.findContours(thresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+            let maxArea = 0, maxIdx = -1;
+            for (let i = 0; i < contours.size(); i++) { let a = cv.contourArea(contours.get(i)); if (a > maxArea) { maxArea = a; maxIdx = i; } }
+            if (maxIdx === -1) { addLog('Folha não encontrada', 'error'); return; }
+            let cnt = contours.get(maxIdx);
+            let peri = cv.arcLength(cnt, true);
+            let approx = new cv.Mat();
+            cv.approxPolyDP(cnt, approx, 0.02 * peri, true);
+            if (approx.rows !== 4) { addLog(`Cantos: ${approx.rows} (erro)`, 'error'); return; }
+            let pts = [];
+            for (let i = 0; i < 4; i++) pts.push({ x: approx.data32S[i * 2], y: approx.data32S[i * 2 + 1] });
+            pts.sort((a, b) => (a.x + a.y) - (b.x + b.y));
+            let tl = pts[0], br = pts[3];
+            let tr = pts.find(p => p.x > tl.x && p.y < br.y) || pts[1];
+            let bl = pts.find(p => p.x < br.x && p.y > tl.y) || pts[2];
+            let srcPoints = cv.matFromArray(4, 1, cv.CV_32FC2, [tl.x, tl.y, tr.x, tr.y, br.x, br.y, bl.x, bl.y]);
+            let width = 900, height = 1100;
+            let dstPoints = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, width, 0, width, height, 0, height]);
+            let M = cv.getPerspectiveTransform(srcPoints, dstPoints);
+            let warped = new cv.Mat();
+            cv.warpPerspective(src, warped, M, new cv.Size(width, height));
+            let warpedGray = new cv.Mat();
+            cv.cvtColor(warped, warpedGray, cv.COLOR_RGBA2GRAY);
+            addLog(`✅ Warp: ${width}x${height}`);
+
+            // ---- 2. Grade geométrica: 11 linhas × 6 colunas ----
+            const margin = 40;
+            let totalRows = 11;      // incluindo cabeçalho
+            let totalCols = 6;       // incluindo coluna de numeração
+            let ignoreTop = 1;       // pular primeira linha
+            let ignoreLeft = 1;      // pular primeira coluna
+            let rows = totalRows - ignoreTop;   // =10
+            let cols = totalCols - ignoreLeft;  // =5
+
+            let startX = margin;
+            let startY = margin;
+            let cellWidth = (width - 2 * margin) / totalCols;
+            let cellHeight = (height - 2 * margin) / totalRows;
+            addLog(`📐 Grade total: ${totalRows} linhas × ${totalCols} colunas -> células úteis: ${rows}×${cols}`);
+
+            // Lista completa de todas as células (incluindo cabeçalho e numeração)
+            let allCells = [];
+            for (let r = 0; r < totalRows; r++) {
+                for (let c = 0; c < totalCols; c++) {
+                    let x = startX + c * cellWidth;
+                    let y = startY + r * cellHeight;
+                    allCells.push({ row: r, col: c, x: Math.floor(x), y: Math.floor(y), w: Math.floor(cellWidth), h: Math.floor(cellHeight) });
+                }
+            }
+
+            // Apenas as células de resposta (ignorando primeira linha e primeira coluna)
+            let cells = [];
+            for (let r = ignoreTop; r < totalRows; r++) {
+                for (let c = ignoreLeft; c < totalCols; c++) {
+                    let idx = r * totalCols + c;
+                    let cell = allCells[idx];
+                    cells.push({ q: r - ignoreTop, alt: c - ignoreLeft, x: cell.x, y: cell.y, w: cell.w, h: cell.h });
+                }
+            }
+
+            // ---- 3. Intensidade média de cada célula de resposta ----
+            let intensidades = [];
+            for (let cell of cells) {
+                let roi = warpedGray.roi(new cv.Rect(cell.x, cell.y, cell.w, cell.h));
+                let meanVal = cv.mean(roi)[0];
+                roi.delete();
+                intensidades.push(meanVal);
+            }
+
+            // ---- 4. Limiar automático (Otsu) ----
+            let limiar = calcularLimiarAutomatico(intensidades);
+            addLog(`🔧 Limiar automático: ${limiar}`);
+
+            // ---- 5. Detectar a alternativa mais escura por questão (assumindo uma marcação por linha) ----
+            let detectedAlts = [];
+            let invalid = false;
+            let todasMuitoClaras = true;
+            let todasMuitoEscuras = true;
+
+            for (let q = 0; q < rows; q++) {
+                let rowIntensities = [];
+                for (let alt = 0; alt < cols; alt++) {
+                    let idx = q * cols + alt;
+                    rowIntensities.push(intensidades[idx]);
+                }
+                let minIntensity = Math.min(...rowIntensities);
+                let maxIntensity = Math.max(...rowIntensities);
+                let diff = maxIntensity - minIntensity;
+                let bestAlt = rowIntensities.indexOf(minIntensity);
+
+                // Verificar se a célula mais escura é significativamente mais escura que as outras (diferença > 20) e está abaixo do limiar
+                let isMarked = (diff > 20) && (minIntensity < limiar);
+
+                if (!isMarked) {
+                    if (minIntensity > 200) todasMuitoClaras = true;
+                    if (maxIntensity < 150) todasMuitoEscuras = true;
+                    addLog(`⚠️ Q${q + 1}: marcação inválida (dif=${diff.toFixed(0)}, min=${minIntensity.toFixed(0)})`, 'warn');
+                    invalid = true;
+                    detectedAlts.push(-1);
+                } else {
+                    detectedAlts.push(bestAlt);
+                    addLog(`✅ Q${q + 1}: ${String.fromCharCode(65 + bestAlt)} (${minIntensity.toFixed(0)})`);
+                }
+            }
+
+            if (invalid) {
+                if (todasMuitoClaras) {
+                    addLog('❌ O gabarito parece estar em BRANCO (nenhuma célula preenchida).', 'error');
+                    detectedDiv.innerHTML = '<span style="color:#ff8888">Gabarito em branco – nenhuma resposta detectada.</span>';
+                    currentDetected = [];
+                } else if (todasMuitoEscuras) {
+                    addLog('❌ O gabarito parece ter TODAS as células preenchidas (inválido).', 'error');
+                    detectedDiv.innerHTML = '<span style="color:#ff8888">Gabarito inválido – todas as células estão marcadas.</span>';
+                    currentDetected = [];
+                } else {
+                    addLog('❌ O gabarito contém marcações ambíguas (múltiplas ou nenhuma por questão).', 'error');
+                    detectedDiv.innerHTML = '<span style="color:#ff8888">Marcações inconsistentes – verifique se há exatamente uma resposta por questão.</span>';
+                    currentDetected = [];
+                }
+            } else {
+                currentDetected = detectedAlts.map(alt => String.fromCharCode(65 + alt));
+                detectedDiv.innerHTML = `<strong>Respostas detectadas (10 questões):</strong> ${currentDetected.join(', ')}`;
+            }
+
+            // ---- 6. Desenhar grade roxa (todas as 11x6 células) e círculos vermelhos apenas nas células de resposta válidas ----
+            let warpedResult = warped.clone();
+            const roxo = new cv.Scalar(255, 0, 255);
+            // linhas horizontais (totalRows+1 linhas)
+            for (let r = 0; r <= totalRows; r++) {
+                let y = startY + r * cellHeight;
+                cv.line(warpedResult, new cv.Point(startX, y), new cv.Point(startX + totalCols * cellWidth, y), roxo, 2);
+            }
+            // linhas verticais (totalCols+1 colunas)
+            for (let c = 0; c <= totalCols; c++) {
+                let x = startX + c * cellWidth;
+                cv.line(warpedResult, new cv.Point(x, startY), new cv.Point(x, startY + totalRows * cellHeight), roxo, 2);
+            }
+
+            if (!invalid && currentDetected.length === rows) {
+                for (let q = 0; q < rows; q++) {
+                    let alt = detectedAlts[q];
+                    let cell = cells.find(c => c.q === q && c.alt === alt);
+                    let centerX = cell.x + cell.w / 2;
+                    let centerY = cell.y + cell.h / 2;
+                    let radius = Math.min(cell.w, cell.h) * 0.35;
+                    cv.circle(warpedResult, new cv.Point(centerX, centerY), radius, new cv.Scalar(0, 0, 255), -1);
+                }
+            }
+
+            // Exibir máscara redimensionada
+            let maskResized = new cv.Mat();
+            cv.resize(warpedResult, maskResized, new cv.Size(maskCanvas.width, maskCanvas.height), 0, 0, cv.INTER_AREA);
+            cv.imshow(maskCanvas, maskResized);
+            maskResized.delete();
+
+            // ---- 7. Voltar para perspectiva original (apenas círculos vermelhos) ----
+            let warpedOnlyMarks = new cv.Mat.zeros(warped.rows, warped.cols, cv.CV_8UC3);
+            if (!invalid && currentDetected.length === rows) {
+                for (let q = 0; q < rows; q++) {
+                    let alt = detectedAlts[q];
+                    let cell = cells.find(c => c.q === q && c.alt === alt);
+                    let centerX = cell.x + cell.w / 2;
+                    let centerY = cell.y + cell.h / 2;
+                    let radius = Math.min(cell.w, cell.h) * 0.35;
+                    cv.circle(warpedOnlyMarks, new cv.Point(centerX, centerY), radius, new cv.Scalar(0, 0, 255), -1);
+                }
+            }
+            let MInv = M.inv();
+            let finalMarks = new cv.Mat();
+            cv.warpPerspective(warpedOnlyMarks, finalMarks, MInv, new cv.Size(src.cols, src.rows));
+            let overlay = src.clone();
+            for (let y = 0; y < finalMarks.rows; y++) {
+                for (let x = 0; x < finalMarks.cols; x++) {
+                    let p = finalMarks.ucharPtr(y, x);
+                    if (p[0] !== 0 || p[1] !== 0 || p[2] !== 0) {
+                        overlay.ucharPtr(y, x)[0] = p[0];
+                        overlay.ucharPtr(y, x)[1] = p[1];
+                        overlay.ucharPtr(y, x)[2] = p[2];
+                    }
+                }
+            }
+            cv.imshow(resultCanvas, overlay);
+
+            // Limpeza
+            src.delete(); gray.delete(); blurred.delete(); thresh.delete(); contours.delete(); hierarchy.delete();
+            approx.delete(); srcPoints.delete(); dstPoints.delete(); M.delete(); warped.delete(); warpedGray.delete();
+            warpedResult.delete(); warpedOnlyMarks.delete(); finalMarks.delete(); overlay.delete(); MInv.delete();
+
+            addLog(`🏁 Processamento concluído.`);
+        };
+
+        applyGabaritoBtn.onclick = () => {
+            if (currentDetected.length === 0) {
+                comparacaoDiv.innerHTML = '⚠️ Nenhuma resposta válida detectada. Processe uma imagem válida primeiro.';
+                return;
+            }
+            let gabText = gabaritoInput.value.trim().toUpperCase();
+            if (!gabText) {
+                comparacaoDiv.innerHTML = '⚠️ Digite o gabarito correto (ex: B,C,E,C,D,A,B,C,D,E)';
+                return;
+            }
+            let expected = gabText.split(/[ ,]+/);
+            if (expected.length !== 10) {
+                comparacaoDiv.innerHTML = `⚠️ O gabarito deve ter 10 alternativas. Fornecido: ${expected.length}`;
+                return;
+            }
+            let acertos = 0;
+            let html = '<table><tr><th>Questão</th><th>Detectado</th><th>Correto</th><th>Status</th></tr>';
+            for (let i = 0; i < 10; i++) {
+                let det = currentDetected[i];
+                let corr = expected[i];
+                let ok = (det === corr);
+                if (ok) acertos++;
+                html += `<tr class="${ok ? 'correct' : 'wrong'}">
+                        <td>${i + 1}</td>
+                        <td>${det}</td>
+                        <td>${corr}</td>
+                        <td>${ok ? '✅' : '❌'}</td>
+                      </tr>`;
+            }
+            html += `<tr><td colspan="4"><strong>Total: ${acertos}/10 (${(acertos / 10 * 100).toFixed(0)}%)</strong></td></tr>`;
+            comparacaoDiv.innerHTML = html;
+        };
+    </script>
+</body>
+
+</html>

@@ -10,22 +10,6 @@ export const QUESTAO_LABELS = Array.from(
 export type CameraMode = "gabarito-ref" | "aluno-info" | "gabarito-aluno";
 export type CameraPhase = "starting" | "preview" | "processing" | "form" | "error";
 
-export interface LiveDetectedAnswer {
-  row: number;
-  col: number;
-  option: string;
-  centerX: number;
-  centerY: number;
-}
-
-export interface LiveAnswerSheetDetection {
-  frameWidth: number;
-  frameHeight: number;
-  table: AnswerSheetReadResponse["table"];
-  markedAnswers: LiveDetectedAnswer[];
-  gapRows: number[];
-}
-
 export function resizeAnswers(answerList: string[], targetLength: number) {
   return Array.from(
     { length: targetLength },

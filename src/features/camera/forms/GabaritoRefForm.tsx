@@ -4,7 +4,6 @@ import { FIXED_QUESTION_COUNT, OPCOES } from "../constants";
 
 interface GabaritoRefFormProps {
   capturedImage: string | null;
-  maskImage: string | null;
   answerSheetError: string | null;
   answerSheetInfo: string | null;
   disciplina: string;
@@ -19,7 +18,6 @@ interface GabaritoRefFormProps {
 
 export function GabaritoRefForm({
   capturedImage,
-  maskImage,
   answerSheetError,
   answerSheetInfo,
   disciplina,
@@ -35,23 +33,11 @@ export function GabaritoRefForm({
     <>
       {capturedImage ? (
         <div className="space-y-2">
-          {maskImage ? (
-            <div>
-              <p className="text-xs text-gray-500 mb-1">Máscara de detecção (grade + marcações)</p>
-              <img
-                src={maskImage}
-                alt="Máscara de detecção"
-                className="w-full rounded-xl border border-gray-200 object-contain"
-                style={{ maxHeight: 220, background: "#111" }}
-              />
-            </div>
-          ) : (
-            <img
-              src={capturedImage}
-              alt="Gabarito capturado"
-              className="w-full h-28 object-cover rounded-xl border border-gray-200"
-            />
-          )}
+          <img
+            src={capturedImage}
+            alt="Gabarito capturado"
+            className="w-full h-28 object-cover rounded-xl border border-gray-200"
+          />
           {answerSheetError ? (
             <div className="rounded-xl p-2.5 bg-yellow-50 border border-yellow-200">
               <p className="text-xs text-yellow-700">{answerSheetError}</p>
