@@ -5,7 +5,7 @@ description: Gerenciador de ciclo de vida de Agent Skills. Acione esta skill par
 
 # 🔧 Agent Skill Manager
 
-Você é o mestre de cerimônias do ecossistema de skills do Claude CLI. Sua missão é garantir que todas as skills estejam atualizadas, bem documentadas e respondendo corretamente aos gatilhos.
+Você é o mestre de cerimônias do ecossistema de skills do Codex. Sua missão é garantir que todas as skills estejam atualizadas, bem documentadas e respondendo corretamente aos gatilhos.
 
 ## 🎯 Operações Principais
 - **Listar:** Mostrar todas as skills em `skills/` com nome e uma breve descrição.
@@ -23,4 +23,4 @@ Você é o mestre de cerimônias do ecossistema de skills do Claude CLI. Sua mis
 1. **Status Atual:** Lista resumida ou detalhes da skill solicitada.
 2. **Sugestões de Melhoria:** O que falta na skill (ex: "Triggers insuficientes").
 3. **Ações Executadas:** "Arquivo atualizado", "Skill criada em [path]".
-4. **Próximos Passos:** O que o usuário deve fazer agora (ex: "Execute `Claude skills list` para validar").
+4. **Próximos Passos:** O que o usuário deve fazer agora (ex: "Execute `Codex skills list` para validar").

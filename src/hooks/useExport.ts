@@ -3,6 +3,10 @@ import { useState } from "react";
 import ExcelJS from "exceljs";
 
 import type { Aluno, GabaritoReferencia } from "@/types";
+import {
+  buildResultAnswerCells,
+  buildResultBaseRow,
+} from "@/utils/results";
 
 export function useExport(
   alunos: Aluno[],
@@ -52,24 +56,22 @@ export function useExport(
     ];
 
     alunos.forEach((aluno) => {
+      const baseRow = buildResultBaseRow(aluno, gabaritoRef);
       const row: Record<string, string | number> = {
-        nome: aluno.nome,
-        matricula: aluno.matricula,
-        disciplina: gabaritoRef.disciplina,
-        dataProva: gabaritoRef.dataProva,
-        acertos: aluno.acertos ?? "-",
-        totalQuestoes: gabaritoRef.numQuestoes,
-        nota: aluno.nota ?? "-",
+        nome: baseRow.nome,
+        matricula: baseRow.matricula,
+        disciplina: baseRow.disciplina,
+        dataProva: baseRow.dataProva,
+        acertos: baseRow.acertos,
+        totalQuestoes: baseRow.totalQuestoes,
+        nota: baseRow.nota,
       };
 
-      Array.from({ length: gabaritoRef.numQuestoes }).forEach((_, index) => {
-        const respostaAluno = aluno.gabarito?.[index] ?? "-";
-        const respostaCorreta = gabaritoRef.respostas[index];
-        row[`q${index + 1}`] =
-          respostaAluno === respostaCorreta
-            ? `✓${respostaAluno}`
-            : respostaAluno || "-";
-      });
+      buildResultAnswerCells(aluno, gabaritoRef, (answer) => `✓${answer}`).forEach(
+        (resposta, index) => {
+          row[`q${index + 1}`] = resposta;
+        }
+      );
 
       worksheet.addRow(row);
     });

@@ -1,4 +1,5 @@
 import { processAnswerSheet } from "./opencvAnswerSheet";
+import type { CameraProcessingPort } from "../ports/cameraProcessingPort";
 
 type StudentExtractionResponse = {
   nome: string;
@@ -85,3 +86,8 @@ export async function readAnswerSheetFromImage(
 ) {
   return processAnswerSheet(imageDataUrl, onProgress);
 }
+
+export const browserCameraProcessingAdapter: CameraProcessingPort = {
+  extractAlunoFromImage,
+  readAnswerSheetFromImage,
+};

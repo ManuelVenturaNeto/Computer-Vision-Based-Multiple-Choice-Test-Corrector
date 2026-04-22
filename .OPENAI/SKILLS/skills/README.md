@@ -1,4 +1,4 @@
-Este repositório contém uma suíte de 8 skills de engenharia de software prontas para uso no Claude CLI.
+Este repositório contém uma suíte de 8 skills de engenharia de software prontas para uso no Codex.
 
 ## 📂 Skills Disponíveis
 
@@ -18,11 +18,11 @@ Este repositório contém uma suíte de 8 skills de engenharia de software pront
 Para ativar qualquer uma dessas skills, basta usar um dos gatilhos descritos no campo `description` de cada arquivo `SKILL.md`.
 
 Exemplos:
-- "Claude, **revise meu código**..." (Aciona `code-review`)
+- "Codex, **revise meu código**..." (Aciona `code-review`)
 - "**Refatore** essa função para usar padrões de projeto..." (Aciona `code-refactor`)
 - "**Explique** como funciona esse algoritmo de busca..." (Aciona `code-explain`)
 - "**Crie testes** unitários para este componente React..." (Aciona `code-test`)
 
 ## 🛠️ Instalação Local
 
-Se você clonou este repositório no seu workspace, o Claude CLI detectará automaticamente as skills na pasta `skills/`.
+Se você clonou este repositório no seu workspace, o Codex detectará automaticamente as skills na pasta `skills/`.
