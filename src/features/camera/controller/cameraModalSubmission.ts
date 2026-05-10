@@ -1,4 +1,4 @@
-import { FIXED_QUESTION_COUNT, type CameraMode } from "../constants";
+import type { CameraMode } from "../constants";
 import { validateCameraForm } from "../cameraValidation";
 
 interface SubmissionInput {
@@ -20,8 +20,8 @@ export function buildCameraModalPayload(input: SubmissionInput) {
     return {
       type: "gabarito-ref" as const,
       value: {
-        numQuestoes: FIXED_QUESTION_COUNT,
-        respostas: input.respostas.slice(0, FIXED_QUESTION_COUNT),
+        numQuestoes: input.numQuestoes,
+        respostas: input.respostas.slice(0, input.numQuestoes),
         disciplina: input.disciplina,
         dataProva: input.dataProva,
       },

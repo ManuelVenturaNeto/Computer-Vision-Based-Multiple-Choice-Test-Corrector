@@ -1,10 +1,17 @@
 import {
   ANSWER_SHEET_READER_CONFIG,
-  USEFUL_COL_COUNT,
+  getTotalColsForAlternativeCount,
+  DEFAULT_ALTERNATIVE_COUNT,
 } from "./answerSheetConfig.js";
 import type { BitmapLikeImage, FullTableRegion, TableRegion } from "./answerSheetTypes.js";
 
-export function locateTableRegion(binaryImage: BitmapLikeImage) {
+const DEFAULT_TOTAL_COLS = getTotalColsForAlternativeCount(DEFAULT_ALTERNATIVE_COUNT);
+
+export function locateTableRegion(
+  binaryImage: BitmapLikeImage,
+  totalRows = ANSWER_SHEET_READER_CONFIG.totalRows,
+  totalCols = DEFAULT_TOTAL_COLS
+) {
   const { rowSums, colSums } = buildProjectionSums(binaryImage);
   const horizontalPeaks = findPeakRegions(
     rowSums,
@@ -16,30 +23,41 @@ export function locateTableRegion(binaryImage: BitmapLikeImage) {
   );
 
   if (
-    horizontalPeaks.length < ANSWER_SHEET_READER_CONFIG.totalRows + 1 ||
-    verticalPeaks.length < ANSWER_SHEET_READER_CONFIG.totalCols + 1
+    horizontalPeaks.length < totalRows + 1 ||
+    verticalPeaks.length < totalCols + 1
   ) {
-    return buildFallbackFullTable(binaryImage);
+    return buildFallbackFullTable(binaryImage, totalRows, totalCols);
   }
 
   const left = verticalPeaks[0];
   const top = horizontalPeaks[0];
-  const width = Math.max(1, verticalPeaks[ANSWER_SHEET_READER_CONFIG.totalCols] - left);
-  const height = Math.max(1, horizontalPeaks[ANSWER_SHEET_READER_CONFIG.totalRows] - top);
+  const width = Math.max(1, verticalPeaks[totalCols] - left);
+  const height = Math.max(1, horizontalPeaks[totalRows] - top);
 
-  return { x: left, y: top, width, height, cellWidth: width / 6, cellHeight: height / 11 };
+  return {
+    x: left,
+    y: top,
+    width,
+    height,
+    cellWidth: width / totalCols,
+    cellHeight: height / totalRows,
+  };
 }
 
-export function buildUsefulTable(fullTable: FullTableRegion, rowCount: number): TableRegion {
+export function buildUsefulTable(
+  fullTable: FullTableRegion,
+  rowCount: number,
+  alternativeCount = DEFAULT_ALTERNATIVE_COUNT
+): TableRegion {
   return {
     x: fullTable.x + fullTable.cellWidth * ANSWER_SHEET_READER_CONFIG.ignoreLeftCols,
     y: fullTable.y + fullTable.cellHeight * ANSWER_SHEET_READER_CONFIG.ignoreTopRows,
-    width: fullTable.cellWidth * USEFUL_COL_COUNT,
+    width: fullTable.cellWidth * alternativeCount,
     height: fullTable.cellHeight * rowCount,
     cellWidth: fullTable.cellWidth,
     cellHeight: fullTable.cellHeight,
     rowCount,
-    colCount: USEFUL_COL_COUNT,
+    colCount: alternativeCount,
   };
 }
 
@@ -61,9 +79,16 @@ function findPeakRegions(sums: number[], minValue: number) {
   return peaks.filter((peak, index) => index === 0 || peak - peaks[index - 1] > ANSWER_SHEET_READER_CONFIG.projectionPeakMergeDistance);
 }
 
-function buildFallbackFullTable(binaryImage: BitmapLikeImage): FullTableRegion {
+function buildFallbackFullTable(binaryImage: BitmapLikeImage, totalRows: number, totalCols: number): FullTableRegion {
   const { width, height } = binaryImage.bitmap;
-  return { x: 0, y: 0, width, height, cellWidth: width / 6, cellHeight: height / 11 };
+  return {
+    x: 0,
+    y: 0,
+    width,
+    height,
+    cellWidth: width / totalCols,
+    cellHeight: height / totalRows,
+  };
 }
 
 function sumRow(binaryImage: BitmapLikeImage, row: number) {

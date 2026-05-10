@@ -2,7 +2,7 @@ import type { ChangeEvent, RefObject } from "react";
 import type { LucideIcon } from "lucide-react";
 import type { GabaritoReferencia } from "@/types";
 
-import type { CameraMode, CameraPhase } from "../constants";
+import type { AlternativeRange, CameraMode, CameraPhase } from "../constants";
 
 export interface CameraModalProps {
   mode: CameraMode;
@@ -33,9 +33,14 @@ export interface CameraModalViewModel {
   disciplina: string;
   dataProva: string;
   respostas: string[];
+  questionCountInput: string;
   nome: string;
   matricula: string;
   errors: Record<string, string>;
+  alternativeRange: AlternativeRange;
+  setAlternativeRange: (r: AlternativeRange) => void;
+  alternativeCount: number;
+  handleConfirmConfig: () => void;
   handleCapture: () => Promise<void>;
   handleSelecionarArquivo: (event: ChangeEvent<HTMLInputElement>) => Promise<void>;
   handleManualForm: () => void;
@@ -43,6 +48,7 @@ export interface CameraModalViewModel {
   handleRetry: () => void;
   handleSubmit: () => void;
   handleResposta: (index: number, opcao: string) => void;
+  setQuestionCountInput: (value: string) => void;
   setDisciplina: (value: string) => void;
   setDataProva: (value: string) => void;
   setNome: (value: string) => void;

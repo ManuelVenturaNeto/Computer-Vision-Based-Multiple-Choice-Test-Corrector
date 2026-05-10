@@ -2,19 +2,21 @@ import { OPCOES } from "../constants";
 
 interface AnswerOptionsGridProps {
   numQuestoes: number;
+  alternativeCount: number;
   respostas: string[];
   onRespostaChange: (index: number, opcao: string) => void;
 }
 
 export function AnswerOptionsGrid(props: AnswerOptionsGridProps) {
-  const { numQuestoes, respostas, onRespostaChange } = props;
+  const { numQuestoes, alternativeCount, respostas, onRespostaChange } = props;
+  const opcoes = OPCOES.slice(0, alternativeCount);
 
   return (
     <div className="space-y-2">
       {Array.from({ length: numQuestoes }).map((_, index) => (
         <div key={index} className="flex items-center gap-2 bg-white rounded-xl px-3 py-2 border border-gray-200">
           <span className="text-xs text-gray-500 w-6 shrink-0">{index + 1}.</span>
-          <div className="flex gap-1.5 flex-1">{OPCOES.map((opcao) => <AnswerButton key={opcao} active={respostas[index] === opcao} onClick={() => onRespostaChange(index, opcao)} label={opcao} />)}</div>
+          <div className="flex gap-1.5 flex-1">{opcoes.map((opcao) => <AnswerButton key={opcao} active={respostas[index] === opcao} onClick={() => onRespostaChange(index, opcao)} label={opcao} />)}</div>
         </div>
       ))}
     </div>

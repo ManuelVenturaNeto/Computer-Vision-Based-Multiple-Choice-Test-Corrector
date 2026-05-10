@@ -1,8 +1,10 @@
 import {
   ANSWER_SHEET_READER_CONFIG,
+  DEFAULT_ALTERNATIVE_COUNT,
+  getTotalColsForAlternativeCount,
+  getTotalRowsForQuestionCount,
   NORMALIZED_HEIGHT,
   NORMALIZED_WIDTH,
-  USEFUL_COL_COUNT,
 } from "./answerSheetConfig.js";
 import type { BitmapLikeImage, TableRegion } from "./answerSheetTypes.js";
 
@@ -29,18 +31,18 @@ export function cropAndScaleToNormalized(
   return { bitmap: { width: NORMALIZED_WIDTH, height: NORMALIZED_HEIGHT, data } };
 }
 
-export function buildNormalizedTable(rowCount: number): TableRegion {
-  const cellWidth = NORMALIZED_WIDTH / ANSWER_SHEET_READER_CONFIG.totalCols;
-  const cellHeight = NORMALIZED_HEIGHT / ANSWER_SHEET_READER_CONFIG.totalRows;
+export function buildNormalizedTable(rowCount: number, totalCols = getTotalColsForAlternativeCount(DEFAULT_ALTERNATIVE_COUNT)): TableRegion {
+  const cellWidth = NORMALIZED_WIDTH / totalCols;
+  const cellHeight = NORMALIZED_HEIGHT / getTotalRowsForQuestionCount(rowCount);
   return {
     x: cellWidth * ANSWER_SHEET_READER_CONFIG.ignoreLeftCols,
     y: cellHeight * ANSWER_SHEET_READER_CONFIG.ignoreTopRows,
-    width: cellWidth * USEFUL_COL_COUNT,
+    width: cellWidth * (totalCols - ANSWER_SHEET_READER_CONFIG.ignoreLeftCols),
     height: cellHeight * rowCount,
     cellWidth,
     cellHeight,
     rowCount,
-    colCount: USEFUL_COL_COUNT,
+    colCount: totalCols - ANSWER_SHEET_READER_CONFIG.ignoreLeftCols,
   };
 }
 

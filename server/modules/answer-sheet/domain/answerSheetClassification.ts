@@ -1,8 +1,8 @@
 import {
-  ANSWER_OPTIONS,
+  ALL_ANSWER_OPTIONS,
   ANSWER_SHEET_READER_CONFIG,
 } from "./answerSheetConfig.js";
-import { AnswerSheetReadError } from "./answerSheetError.js";
+import { AnswerSheetUnreadableError } from "./answerSheetError.js";
 import type { Cell } from "./answerSheetTypes.js";
 
 export function extractAnswers(cells: Cell[], rowCount: number, threshold: number) {
@@ -28,7 +28,7 @@ export function extractAnswers(cells: Cell[], rowCount: number, threshold: numbe
       continue;
     }
 
-    respostas.push(ANSWER_OPTIONS[markedCells[0].col] ?? "");
+    respostas.push(ALL_ANSWER_OPTIONS[markedCells[0].col] ?? "");
   }
 
   assertValidAnswers(respostas, blankLikeRows, fullyDarkRows, rowCount);
@@ -43,12 +43,12 @@ function assertValidAnswers(
 ) {
   if (respostas.some(Boolean)) return;
   if (blankLikeRows === rowCount) {
-    throw new AnswerSheetReadError("Gabarito em branco - nenhuma resposta detectada.");
+    throw new AnswerSheetUnreadableError("Gabarito em branco - nenhuma resposta detectada.");
   }
   if (fullyDarkRows === rowCount) {
-    throw new AnswerSheetReadError("Gabarito invalido - todas as celulas parecem marcadas.");
+    throw new AnswerSheetUnreadableError("Gabarito invalido - todas as celulas parecem marcadas.");
   }
-  throw new AnswerSheetReadError(
+  throw new AnswerSheetUnreadableError(
     "Marcacoes inconsistentes - verifique se ha exatamente uma resposta por questao."
   );
 }

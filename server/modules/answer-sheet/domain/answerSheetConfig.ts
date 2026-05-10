@@ -1,13 +1,24 @@
-export const ANSWER_OPTIONS = ["A", "B", "C", "D", "E"] as const;
+export const ALL_ANSWER_OPTIONS = ["A", "B", "C", "D", "E", "F"] as const;
+export type AnswerOption = typeof ALL_ANSWER_OPTIONS[number];
+export const MIN_ALTERNATIVE_COUNT = 4;
+export const MAX_ALTERNATIVE_COUNT = 6;
+export const DEFAULT_ALTERNATIVE_COUNT = 5;
+export const ANSWER_OPTIONS = ALL_ANSWER_OPTIONS.slice(0, DEFAULT_ALTERNATIVE_COUNT);
+
 export const NORMALIZED_WIDTH = 900;
 export const NORMALIZED_HEIGHT = 1100;
+export const DEFAULT_QUESTION_COUNT = 10;
+export const MIN_QUESTION_COUNT = 1;
+export const MAX_QUESTION_COUNT = 100;
+export const HEADER_COLS = 1;
 
 export const ANSWER_SHEET_READER_CONFIG = {
-  totalRows: 11,
-  totalCols: 6,
+  totalRows: DEFAULT_QUESTION_COUNT + 1,
   ignoreTopRows: 1,
-  ignoreLeftCols: 1,
-  defaultQuestionCount: 10,
+  ignoreLeftCols: HEADER_COLS,
+  defaultQuestionCount: DEFAULT_QUESTION_COUNT,
+  minQuestionCount: MIN_QUESTION_COUNT,
+  maxQuestionCount: MAX_QUESTION_COUNT,
   cellSampleMargin: 0.1,
   minMarkedDifference: 20,
   duplicateTolerance: 8,
@@ -19,7 +30,10 @@ export const ANSWER_SHEET_READER_CONFIG = {
   colPeakThresholdRatio: 0.45,
 } as const;
 
-export const USEFUL_ROW_COUNT =
-  ANSWER_SHEET_READER_CONFIG.totalRows - ANSWER_SHEET_READER_CONFIG.ignoreTopRows;
-export const USEFUL_COL_COUNT =
-  ANSWER_SHEET_READER_CONFIG.totalCols - ANSWER_SHEET_READER_CONFIG.ignoreLeftCols;
+export function getTotalRowsForQuestionCount(questionCount: number) {
+  return questionCount + ANSWER_SHEET_READER_CONFIG.ignoreTopRows;
+}
+
+export function getTotalColsForAlternativeCount(alternativeCount: number) {
+  return alternativeCount + HEADER_COLS;
+}

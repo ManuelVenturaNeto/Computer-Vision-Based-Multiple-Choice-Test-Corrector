@@ -1,8 +1,10 @@
 import { Jimp } from "jimp";
 
 import {
-  ANSWER_OPTIONS,
+  ALL_ANSWER_OPTIONS,
   ANSWER_SHEET_READER_CONFIG,
+  getTotalColsForAlternativeCount,
+  getTotalRowsForQuestionCount,
 } from "../../domain/answerSheetConfig.js";
 import type { BitmapLikeImage } from "../../domain/answerSheetTypes.js";
 import type { AnswerSheetImagePort } from "../../ports/answerSheetImagePort.js";
@@ -26,15 +28,17 @@ export class JimpAnswerSheetImageAdapter implements AnswerSheetImagePort {
     };
   }
 
-  async buildMaskImage(normalizedColorImage: BitmapLikeImage, respostas: string[]) {
+  async buildMaskImage(normalizedColorImage: BitmapLikeImage, respostas: string[], alternativeCount: number) {
     const image = new Jimp({ width: normalizedColorImage.bitmap.width, height: normalizedColorImage.bitmap.height, color: 0xffffffff });
     const data = image.bitmap.data as unknown as Uint8Array;
     normalizedColorImage.bitmap.data.forEach((value, index) => { data[index] = value; });
-    const cellWidth = image.bitmap.width / ANSWER_SHEET_READER_CONFIG.totalCols;
-    const cellHeight = image.bitmap.height / ANSWER_SHEET_READER_CONFIG.totalRows;
+    const totalRows = getTotalRowsForQuestionCount(respostas.length);
+    const totalCols = getTotalColsForAlternativeCount(alternativeCount);
+    const cellWidth = image.bitmap.width / totalCols;
+    const cellHeight = image.bitmap.height / totalRows;
 
-    for (let row = 0; row <= ANSWER_SHEET_READER_CONFIG.totalRows; row += 1) drawHLine(data, normalizedColorImage, 0, image.bitmap.width - 1, row * cellHeight, [255, 0, 255]);
-    for (let col = 0; col <= ANSWER_SHEET_READER_CONFIG.totalCols; col += 1) drawVLine(data, normalizedColorImage, col * cellWidth, 0, image.bitmap.height - 1, [255, 0, 255]);
+    for (let row = 0; row <= totalRows; row += 1) drawHLine(data, normalizedColorImage, 0, image.bitmap.width - 1, row * cellHeight, [255, 0, 255]);
+    for (let col = 0; col <= totalCols; col += 1) drawVLine(data, normalizedColorImage, col * cellWidth, 0, image.bitmap.height - 1, [255, 0, 255]);
     respostas.forEach((answer, questionIndex) => drawAnswerMarker(data, normalizedColorImage, answer, questionIndex, cellWidth, cellHeight));
 
     return image.getBase64("image/jpeg");
@@ -46,7 +50,7 @@ function toBitmapImage(image: BitmapSource): BitmapLikeImage {
 }
 
 function drawAnswerMarker(data: Uint8Array, image: BitmapLikeImage, answer: string, questionIndex: number, cellWidth: number, cellHeight: number) {
-  const colIndex = ANSWER_OPTIONS.indexOf(answer as (typeof ANSWER_OPTIONS)[number]);
+  const colIndex = ALL_ANSWER_OPTIONS.indexOf(answer as (typeof ALL_ANSWER_OPTIONS)[number]);
   if (colIndex < 0) return;
   drawFilledCircle(
     data,

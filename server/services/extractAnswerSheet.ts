@@ -1,5 +1,6 @@
 import { extractAnswerSheetUseCase } from "../modules/answer-sheet/application/extractAnswerSheetUseCase.js";
 import { JimpAnswerSheetImageAdapter } from "../modules/answer-sheet/adapters/jimp/JimpAnswerSheetImageAdapter.js";
+import { OpenAiAnswerSheetVisionAdapter } from "../modules/answer-sheet/adapters/openai/OpenAiAnswerSheetVisionAdapter.js";
 
 export { ANSWER_SHEET_READER_CONFIG } from "../modules/answer-sheet/domain/answerSheetConfig.js";
 export { AnswerSheetReadError } from "../modules/answer-sheet/domain/answerSheetError.js";
@@ -11,10 +12,16 @@ export type {
 } from "../modules/answer-sheet/domain/answerSheetTypes.js";
 
 const jimpAnswerSheetImageAdapter = new JimpAnswerSheetImageAdapter();
+const openAiAnswerSheetVisionAdapter = new OpenAiAnswerSheetVisionAdapter();
 
 export function extractAnswerSheetFromImageBase64(
   imageBase64: string,
-  options = {}
+  options: import("../modules/answer-sheet/domain/answerSheetTypes.js").AnswerSheetReadOptions = {}
 ) {
-  return extractAnswerSheetUseCase(imageBase64, options, jimpAnswerSheetImageAdapter);
+  return extractAnswerSheetUseCase(
+    imageBase64,
+    options,
+    jimpAnswerSheetImageAdapter,
+    openAiAnswerSheetVisionAdapter
+  );
 }

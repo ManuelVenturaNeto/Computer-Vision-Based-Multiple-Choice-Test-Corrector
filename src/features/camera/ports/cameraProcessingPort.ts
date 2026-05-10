@@ -13,6 +13,7 @@ export interface CameraProcessingPort {
   readAnswerSheetFromImage(
     imageDataUrl: string,
     expectedQuestionCount?: number,
+    expectedAlternativeCount?: number,
     onProgress?: (status: string, progress?: number) => void
   ): Promise<AnswerSheetReadPortResult>;
 }

@@ -100,16 +100,18 @@ Request:
 ```json
 {
   "imageBase64": "...",
-  "expectedQuestionCount": 10
+  "expectedQuestionCount": 13
 }
 ```
+
+`expectedQuestionCount` e opcional. Quando omitido, a leitura usa o padrao atual de 10 questoes.
 
 Response:
 
 ```json
 {
-  "numQuestoes": 10,
-  "respostas": ["A", "C", "B", "D", "E"],
+  "numQuestoes": 13,
+  "respostas": ["A", "C", "B", "D", "E", "A", "B", "C", "D", "E", "A", "C", "E"],
   "warnings": [],
   "provider": "jimp"
 }

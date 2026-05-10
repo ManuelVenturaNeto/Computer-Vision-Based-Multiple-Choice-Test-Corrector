@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "model": "claude-opus-4-7",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"Se o usuário está pedindo uma alteração de código neste projeto, você (Opus 4.7) atua APENAS como orquestrador — não edite arquivos diretamente. Despache em sequência: (1) Agent subagent_type=feature-planner (Sonnet) para produzir o plano alinhado ao CLAUDE.md; (2) Agent subagent_type=feature-implementer (Sonnet) com o plano; (3) Agent subagent_type=feature-reviewer (Sonnet) para validar contra CLAUDE.md e o plano. Para perguntas, leituras e dúvidas que não envolvam editar código, ignore este fluxo e responda direto.\"}}'"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -5,9 +5,14 @@ import { ensureOpenCv, getOpenCv } from "./openCvLoader";
 import { buildMaskImage } from "./openCvMask";
 import type { AnswerSheetResult } from "./openCvTypes";
 import { warpAnswerSheet } from "./openCvWarpTable";
+import { DEFAULT_QUESTION_COUNT, EXAM_DEFAULT_ALTERNATIVE_RANGE, ALTERNATIVE_COUNT_BY_RANGE } from "../../constants";
+
+const DEFAULT_ALTERNATIVE_COUNT: number = ALTERNATIVE_COUNT_BY_RANGE[EXAM_DEFAULT_ALTERNATIVE_RANGE];
 
 export async function processAnswerSheetWithOpenCv(
   imageDataUrl: string,
+  expectedQuestionCount = DEFAULT_QUESTION_COUNT,
+  expectedAlternativeCount = DEFAULT_ALTERNATIVE_COUNT,
   onProgress?: (status: string) => void
 ): Promise<AnswerSheetResult> {
   onProgress?.("Carregando OpenCV...");
@@ -18,7 +23,7 @@ export async function processAnswerSheetWithOpenCv(
   const originalCanvas = await drawImageToCanvas(imageDataUrl);
   const { warped, warpedGray } = warpAnswerSheet(cv, originalCanvas);
   try {
-    const grid = buildAnswerCells();
+    const grid = buildAnswerCells(expectedQuestionCount, expectedAlternativeCount);
     const intensidades = readCellIntensities(cv, warpedGray, grid.cells);
     const { respostas, detectedAlts } = detectAnswers(intensidades, grid.rows, grid.cols);
     const maskImage = buildMaskImage(cv, warped, grid.cells, detectedAlts, grid);

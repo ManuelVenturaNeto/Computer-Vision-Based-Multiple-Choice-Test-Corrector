@@ -1,4 +1,4 @@
-import { USEFUL_ROW_COUNT } from "./answerSheetConfig.js";
+import { ANSWER_SHEET_READER_CONFIG, MAX_ALTERNATIVE_COUNT, MIN_ALTERNATIVE_COUNT } from "./answerSheetConfig.js";
 import { AnswerSheetReadError } from "./answerSheetError.js";
 import type { BitmapLikeImage } from "./answerSheetTypes.js";
 
@@ -9,7 +9,22 @@ export function clampQuestionCount(value: unknown) {
   }
 
   const normalized = Math.round(parsed);
-  return normalized === USEFUL_ROW_COUNT ? normalized : undefined;
+  if (
+    normalized < ANSWER_SHEET_READER_CONFIG.minQuestionCount ||
+    normalized > ANSWER_SHEET_READER_CONFIG.maxQuestionCount
+  ) {
+    return undefined;
+  }
+
+  return normalized;
+}
+
+export function clampAlternativeCount(value: unknown): number | undefined {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return undefined;
+  const normalized = Math.round(parsed);
+  if (normalized < MIN_ALTERNATIVE_COUNT || normalized > MAX_ALTERNATIVE_COUNT) return undefined;
+  return normalized;
 }
 
 export function calculateOtsuThreshold(intensities: number[]) {

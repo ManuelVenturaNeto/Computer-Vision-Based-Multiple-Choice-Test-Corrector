@@ -6,6 +6,13 @@ import {
   sanitizeStudentRegistrationInput,
   validateCameraForm,
 } from "../src/features/camera/cameraValidation.js";
+import {
+  sanitizeExamQuestionCountInput,
+  resolveExamQuestionCountInput,
+  EXAM_DEFAULT_QUESTION_COUNT,
+  EXAM_MIN_QUESTION_COUNT,
+  EXAM_MAX_QUESTION_COUNT,
+} from "../src/features/camera/constants.js";
 
 test("sanitizeStudentNameInput removes non-letter characters", () => {
   assert.equal(
@@ -30,6 +37,17 @@ test("validateCameraForm requires disciplina and all reference answers", () => {
 
   assert.equal(errors.disciplina, "Informe a disciplina");
   assert.equal(errors.respostas, "8 questão(ões) sem resposta");
+
+  const customCountErrors = validateCameraForm({
+    mode: "gabarito-ref",
+    disciplina: "Historia",
+    nome: "",
+    matricula: "",
+    respostas: Array(13).fill("A"),
+    numQuestoes: 13,
+  });
+
+  assert.equal(customCountErrors.respostas, undefined);
 });
 
 test("validateCameraForm validates aluno-info and aluno answer sheet modes", () => {
@@ -53,4 +71,24 @@ test("validateCameraForm validates aluno-info and aluno answer sheet modes", () 
   assert.equal(alunoErrors.nome, "Nome deve conter apenas letras");
   assert.equal(alunoErrors.matricula, "Matrícula deve ter exatamente 6 dígitos");
   assert.equal(gabaritoAlunoErrors.respostas, "2 questão(ões) sem resposta");
+});
+
+test("sanitizeExamQuestionCountInput clamps to exam bounds", () => {
+  assert.equal(sanitizeExamQuestionCountInput("3"), String(EXAM_MIN_QUESTION_COUNT));
+  assert.equal(sanitizeExamQuestionCountInput("20"), String(EXAM_MAX_QUESTION_COUNT));
+  assert.equal(sanitizeExamQuestionCountInput("10"), "10");
+  assert.equal(sanitizeExamQuestionCountInput(""), "");
+  assert.equal(sanitizeExamQuestionCountInput("abc"), "");
+  assert.equal(sanitizeExamQuestionCountInput("4"), "4");
+  assert.equal(sanitizeExamQuestionCountInput("15"), "15");
+});
+
+test("resolveExamQuestionCountInput returns default for non-numeric input", () => {
+  assert.equal(resolveExamQuestionCountInput(""), EXAM_DEFAULT_QUESTION_COUNT);
+  assert.equal(resolveExamQuestionCountInput("abc"), EXAM_DEFAULT_QUESTION_COUNT);
+  assert.equal(resolveExamQuestionCountInput("10"), 10);
+  assert.equal(resolveExamQuestionCountInput("3"), EXAM_MIN_QUESTION_COUNT);
+  assert.equal(resolveExamQuestionCountInput("20"), EXAM_MAX_QUESTION_COUNT);
+  assert.equal(resolveExamQuestionCountInput("4"), 4);
+  assert.equal(resolveExamQuestionCountInput("15"), 15);
 });

@@ -81,10 +81,11 @@ export async function extractAlunoFromImage(imageDataUrl: string) {
 
 export async function readAnswerSheetFromImage(
   imageDataUrl: string,
-  _expectedQuestionCount?: number,
+  expectedQuestionCount?: number,
+  expectedAlternativeCount?: number,
   onProgress?: (status: string, progress?: number) => void
 ) {
-  return processAnswerSheet(imageDataUrl, onProgress);
+  return processAnswerSheet(imageDataUrl, expectedQuestionCount, expectedAlternativeCount, onProgress);
 }
 
 export const browserCameraProcessingAdapter: CameraProcessingPort = {

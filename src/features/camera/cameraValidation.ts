@@ -1,7 +1,4 @@
-import {
-  FIXED_QUESTION_COUNT,
-  type CameraMode,
-} from "./constants.js";
+import type { CameraMode } from "./constants.js";
 
 export function sanitizeStudentNameInput(value: string) {
   return value.replace(/[^a-zA-ZÀ-ÿ\s]/g, "");
@@ -52,7 +49,7 @@ export function validateCameraForm({
     }
 
     const vazias = respostas
-      .slice(0, FIXED_QUESTION_COUNT)
+      .slice(0, numQuestoes)
       .filter((resposta) => !resposta).length;
 
     if (vazias > 0) {

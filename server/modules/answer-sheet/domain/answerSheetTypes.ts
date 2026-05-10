@@ -32,9 +32,15 @@ export interface AnswerSheetExtraction {
   warnings: string[];
   table: TableRegion;
   maskImage: string;
-  provider: "jimp";
+  provider: "jimp" | "openai";
 }
 
 export interface AnswerSheetReadOptions {
   expectedQuestionCount?: number;
+  expectedAlternativeCount?: number;
+}
+
+export interface AiAnswerSheetResult {
+  respostas: string[];
+  warnings: string[];
 }

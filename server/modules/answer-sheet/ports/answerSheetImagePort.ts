@@ -7,5 +7,5 @@ export interface AnswerSheetImageInput {
 
 export interface AnswerSheetImagePort {
   readInput(imageBase64: string, contrast: number): Promise<AnswerSheetImageInput>;
-  buildMaskImage(normalizedColorImage: BitmapLikeImage, respostas: string[]): Promise<string>;
+  buildMaskImage(normalizedColorImage: BitmapLikeImage, respostas: string[], alternativeCount: number): Promise<string>;
 }
